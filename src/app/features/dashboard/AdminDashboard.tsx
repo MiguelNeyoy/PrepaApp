@@ -1,5 +1,7 @@
 ﻿import React, { useEffect, useRef, useState } from "react";
-import { BarChart3, ChevronDown, Database, Eye, EyeOff, LogOut, Minus, Moon, RefreshCw, Save, Settings, ShieldCheck, Square, Sun, Trash2, Users, X } from "lucide-react";
+import { BarChart3, Check, ChevronDown, Copy, Database, ExternalLink, Eye, EyeOff, Info, LogOut, Minus, Moon, RefreshCw, Save, Settings, ShieldCheck, Square, Sun, Trash2, Users, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AlumnosTab } from "../alumnos/AlumnosTab";
 import { CatalogosTab } from "../catalogos/CatalogosTab";
@@ -15,6 +17,151 @@ export type TitlebarToast = {
   message: string;
   variant: "success" | "error" | "info";
 };
+
+const ABOUT_REPO_URL = "https://github.com/Frankz1997/app-titulacion.git";
+
+function AboutModal({ onClose }: { onClose: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 140);
+  };
+
+  const openRepository = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    if (isTauriRuntime()) {
+      try {
+        await invoke("open_repository_url");
+        return;
+      } catch {
+        // Browser preview and restricted desktop contexts can use the web fallback.
+      }
+    }
+    window.open(ABOUT_REPO_URL, "_blank", "noopener,noreferrer");
+  };
+
+  const copyRepositoryUrl = async () => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(ABOUT_REPO_URL);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = ABOUT_REPO_URL;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-center justify-center p-5 ${closing ? "app-overlay-out" : "app-overlay-in"}`}
+      onMouseDown={event => {
+        if (event.target === event.currentTarget) requestClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="about-title"
+        className={`w-full max-w-2xl bg-card border border-border rounded-xl shadow-xl overflow-hidden ${closing ? "app-modal-out" : "app-modal-in"}`}
+      >
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+          <div className="min-w-0">
+            <h2 id="about-title" className="text-base font-bold text-foreground">Acerca de</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Información del proyecto y referencias para mantenimiento.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={requestClose}
+            className="w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary flex items-center justify-center transition-colors"
+            aria-label="Cerrar acerca de"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <section className="space-y-2">
+            <h3 className="text-sm font-bold text-foreground">APP Titulación</h3>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Aplicación administrativa para gestionar y dar seguimiento a trámites de titulación, catálogos, usuarios y métricas del proceso.
+            </p>
+          </section>
+
+          <section className="rounded-lg border border-border bg-secondary/20 p-4 space-y-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Realizado por</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">Francisco Castro</p>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Repositorio</p>
+              <div className="mt-1 flex max-w-full items-center gap-2">
+                <a
+                  href={ABOUT_REPO_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={event => void openRepository(event)}
+                  className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-300"
+                >
+                  <span className="min-w-0 truncate select-all">github.com/Frankz1997/app-titulacion.git</span>
+                  <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void copyRepositoryUrl()}
+                  title={copied ? "Copiado" : "Copiar enlace"}
+                  aria-label={copied ? "Enlace copiado" : "Copiar enlace del repositorio"}
+                  className="w-7 h-7 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-secondary flex items-center justify-center transition-colors flex-shrink-0"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-bold text-foreground">Para continuar el proyecto</h3>
+            <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">
+              <p>La aplicación principal está concentrada en src/app.</p>
+              <p>La configuración de escritorio está en src-tauri.</p>
+              <p>La documentación de instalación, GitHub y Supabase está en docs.</p>
+              <p>Los respaldos y scripts de base de datos están en supabase/sql.</p>
+            </div>
+          </section>
+        </div>
+
+        <div className="px-5 py-4 border-t border-border bg-secondary/20 flex justify-end">
+          <button
+            type="button"
+            onClick={requestClose}
+            className="h-9 px-4 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+          >
+            Cerrar
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
+  );
+}
 
 export function AppTitleBar({
   compact = false,
@@ -40,6 +187,7 @@ export function AppTitleBar({
 }) {
   const appWindow = isTauriRuntime() ? getCurrentWindow() : null;
   const integratedLoginTitleBar = compact && floating;
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const handleToggleMaximize = () => {
     if (compact) return;
@@ -64,7 +212,7 @@ export function AppTitleBar({
         <div
           key={toast.id}
           data-tauri-drag-region
-          className={`pointer-events-none absolute inset-y-0 left-[170px] right-[200px] z-0 flex items-center justify-center px-3 text-[11px] font-bold ${toastTone} app-titlebar-toast-in`}
+          className={`pointer-events-none absolute inset-y-0 left-[170px] right-[240px] z-0 flex items-center justify-center px-3 text-[11px] font-bold ${toastTone} app-titlebar-toast-in`}
         >
           <span className="mr-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-current" />
           <span className="min-w-0 truncate">{toast.message}</span>
@@ -101,6 +249,7 @@ export function AppTitleBar({
       </div>
 
       <div className="relative z-10 h-full flex">
+        {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
         {refreshAction && !integratedLoginTitleBar && (
           <button
             type="button"
@@ -121,6 +270,15 @@ export function AppTitleBar({
           className="w-10 h-full flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors"
         >
           {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => setAboutOpen(true)}
+          title="Acerca de"
+          aria-label="Acerca de"
+          className="w-10 h-full flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors"
+        >
+          <Info className="w-3.5 h-3.5" />
         </button>
         <button
           type="button"
@@ -563,12 +721,16 @@ export function AdminDashboard({
   onAdd,
   onCreateFacultad,
   onUpdateFacultad,
+  onDeleteFacultad,
   onCreateCarrera,
   onUpdateCarrera,
+  onDeleteCarrera,
   onCreateNivel,
   onUpdateNivel,
+  onDeleteNivel,
   onCreateTramite,
   onUpdateTramite,
+  onDeleteTramite,
   profiles,
   cycleSummaries,
   onCreateUser,
@@ -590,12 +752,16 @@ export function AdminDashboard({
   onAdd: (a: Alumno) => Promise<void> | void;
   onCreateFacultad: (facultad: Facultad) => Promise<void> | void;
   onUpdateFacultad: (facultad: Facultad) => Promise<void> | void;
+  onDeleteFacultad: (facultad: Facultad) => Promise<void> | void;
   onCreateCarrera: (carrera: Omit<CarreraCatalogo, "id">) => Promise<void> | void;
   onUpdateCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
+  onDeleteCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
   onCreateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
   onUpdateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
+  onDeleteNivel: (nivel: NivelCatalogo) => Promise<void> | void;
   onCreateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onUpdateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
+  onDeleteTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   profiles: ManagedProfile[];
   cycleSummaries: CycleSummary[];
   onCreateUser: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
@@ -709,12 +875,16 @@ export function AdminDashboard({
               canManage={isAdmin}
               onCreateFacultad={onCreateFacultad}
               onUpdateFacultad={onUpdateFacultad}
+              onDeleteFacultad={onDeleteFacultad}
               onCreateCarrera={onCreateCarrera}
               onUpdateCarrera={onUpdateCarrera}
+              onDeleteCarrera={onDeleteCarrera}
               onCreateNivel={onCreateNivel}
               onUpdateNivel={onUpdateNivel}
+              onDeleteNivel={onDeleteNivel}
               onCreateTramite={onCreateTramite}
               onUpdateTramite={onUpdateTramite}
+              onDeleteTramite={onDeleteTramite}
             />
           </div>
         ) : tab === "usuarios" && isAdmin ? (

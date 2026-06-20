@@ -1,7 +1,8 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useId, useMemo, useState } from "react";
 import type { ElementType, ReactNode } from "react";
-import { BookOpen, Building2, Check, ClipboardList, Edit3, Layers3, Plus, Search, X } from "lucide-react";
+import { BookOpen, Building2, Check, CircleHelp, ClipboardList, Edit3, Layers3, Plus, Search, Trash2, X } from "lucide-react";
 import { CustomSelect } from "../../components/controls";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import type { Catalogos, CarreraCatalogo, Facultad, NivelCatalogo, TramiteCatalogo } from "../../domain";
 
 type CatalogTab = "facultades" | "carreras" | "niveles" | "tramites";
@@ -19,23 +20,31 @@ export function CatalogosTab({
   canManage,
   onCreateFacultad,
   onUpdateFacultad,
+  onDeleteFacultad,
   onCreateCarrera,
   onUpdateCarrera,
+  onDeleteCarrera,
   onCreateNivel,
   onUpdateNivel,
+  onDeleteNivel,
   onCreateTramite,
   onUpdateTramite,
+  onDeleteTramite,
 }: {
   catalogos?: Catalogos;
   canManage: boolean;
   onCreateFacultad: (facultad: Facultad) => Promise<void> | void;
   onUpdateFacultad: (facultad: Facultad) => Promise<void> | void;
+  onDeleteFacultad: (facultad: Facultad) => Promise<void> | void;
   onCreateCarrera: (carrera: Omit<CarreraCatalogo, "id">) => Promise<void> | void;
   onUpdateCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
+  onDeleteCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
   onCreateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
   onUpdateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
+  onDeleteNivel: (nivel: NivelCatalogo) => Promise<void> | void;
   onCreateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onUpdateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
+  onDeleteTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
 }) {
   const [tab, setTab] = useState<CatalogTab>("facultades");
   const [query, setQuery] = useState("");
@@ -149,6 +158,30 @@ export function CatalogosTab({
     }
   };
 
+  const deletePanel = async (nextValue: PanelState["value"]) => {
+    if (!panel || panel.mode !== "edit") return false;
+
+    setSaving(true);
+    setError("");
+    try {
+      if (panel.tab === "facultades") {
+        await onDeleteFacultad(nextValue as Facultad);
+      } else if (panel.tab === "carreras") {
+        await onDeleteCarrera(nextValue as CarreraCatalogo);
+      } else if (panel.tab === "niveles") {
+        await onDeleteNivel(nextValue as NivelCatalogo);
+      } else {
+        await onDeleteTramite(nextValue as TramiteCatalogo);
+      }
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo eliminar el catálogo.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const tabs: { id: CatalogTab; label: string; icon: ElementType; count: number }[] = [
     { id: "facultades", label: "Facultades", icon: Building2, count: data.facultades.length },
     { id: "carreras", label: "Carreras", icon: BookOpen, count: data.carreras.length },
@@ -171,6 +204,7 @@ export function CatalogosTab({
             setPanel(prev => prev ? ({ ...prev, value } as PanelState) : prev);
           }}
           onSubmit={submitPanel}
+          onDelete={deletePanel}
         />
       )}
 
@@ -395,6 +429,7 @@ function CatalogPanel({
   onClose,
   onChange,
   onSubmit,
+  onDelete,
 }: {
   panel: PanelState;
   catalogos: Catalogos;
@@ -404,17 +439,27 @@ function CatalogPanel({
   onClose: () => void;
   onChange: (value: PanelState["value"]) => void;
   onSubmit: (value: PanelState["value"]) => Promise<boolean> | boolean;
+  onDelete: (value: PanelState["value"]) => Promise<boolean> | boolean;
 }) {
   const title = `${panel.mode === "create" ? "Nuevo" : "Editar"} ${tabSingular(panel.tab)}`;
   const value = panel.value;
   const [closing, setClosing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const update = (patch: Record<string, unknown>) => onChange({ ...value, ...patch } as PanelState["value"]);
   const toggleActive = () => update({ activo: !(value as { activo: boolean }).activo });
   const requestClose = () => {
-    if (closing) return;
+    if (closing || deleting) return;
     setClosing(true);
     window.setTimeout(onClose, 150);
+  };
+  const confirmDeleteText = getCatalogDisplayName(panel.tab, value);
+  const handleDelete = async () => {
+    setDeleting(true);
+    const deleted = await onDelete(value);
+    setDeleting(false);
+    if (deleted) requestClose();
   };
 
   return (
@@ -480,7 +525,12 @@ function CatalogPanel({
               />
               <TextField label="Abreviatura" value={(value as NivelCatalogo).abreviatura} onChange={abreviatura => update({ abreviatura })} />
               <NumberField label="Pago MXN" value={(value as NivelCatalogo).pago} onChange={pago => update({ pago })} />
-              <NumberField label="Orden" value={(value as NivelCatalogo).orden} onChange={orden => update({ orden })} />
+              <NumberField
+                label="Orden"
+                value={(value as NivelCatalogo).orden}
+                onChange={orden => update({ orden })}
+                tooltip="Define la posición en la que aparece este nivel en catálogos, formularios y reportes. Los números menores se muestran primero."
+              />
               <div className="grid grid-cols-[56px_1fr] gap-2">
                 <input
                   type="color"
@@ -510,7 +560,7 @@ function CatalogPanel({
           <button
             type="button"
             onClick={toggleActive}
-            disabled={!canManage}
+            disabled={!canManage || saving || deleting}
             className={`w-full h-10 rounded-lg border text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
               (value as { activo: boolean }).activo
                 ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-600"
@@ -524,17 +574,62 @@ function CatalogPanel({
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
 
-        <div className="px-5 py-4 border-t border-border bg-secondary/20 flex justify-end gap-2">
-          <button type="button" onClick={requestClose} className="h-9 px-4 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary transition-colors">
-            Cancelar
-          </button>
-          <button
-            type="submit"
-            disabled={!canManage || saving}
-            className="h-9 px-4 rounded-lg bg-amber-400 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-colors"
-          >
-            {saving ? "Guardando..." : "Guardar"}
-          </button>
+        {confirmDelete && (
+          <div className="mx-5 mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+            <p className="text-xs font-semibold text-red-600 dark:text-red-300">
+              ¿Eliminar {confirmDeleteText}?
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              Esta acción no se puede deshacer. Si el registro ya está en uso, la Base de Datos no permitirá eliminarlo.
+            </p>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="h-8 px-3 rounded-lg border border-border bg-card text-[11px] font-semibold text-foreground hover:bg-secondary transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-8 px-3 rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1.5 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="px-5 py-4 border-t border-border bg-secondary/20 flex items-center justify-between gap-2">
+          <div>
+            {panel.mode === "edit" && canManage && (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                disabled={saving || deleting}
+                className="h-9 px-3 rounded-lg border border-red-500/20 bg-red-500/10 text-xs font-bold text-red-600 hover:bg-red-500/15 disabled:opacity-50 flex items-center gap-2 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Eliminar
+              </button>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={requestClose} disabled={deleting} className="h-9 px-4 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary disabled:opacity-50 transition-colors">
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!canManage || saving || deleting}
+              className="h-9 px-4 rounded-lg bg-amber-400 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-colors"
+            >
+              {saving ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -632,22 +727,47 @@ function TextField({ label, value, onChange, disabled }: {
   );
 }
 
-function NumberField({ label, value, onChange }: {
+function NumberField({ label, value, onChange, tooltip }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  tooltip?: string;
 }) {
+  const inputId = useId();
+
   return (
-    <label className="block">
-      <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">{label}</span>
+    <div className="block">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <label htmlFor={inputId} className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          {label}
+        </label>
+        {tooltip && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
+                aria-label={`Ayuda sobre ${label}`}
+                onClick={event => event.preventDefault()}
+              >
+                <CircleHelp className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6} className="max-w-64 normal-case tracking-normal leading-relaxed">
+              {tooltip}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
       <input
+        id={inputId}
         type="number"
         min={0}
         value={value}
         onChange={event => onChange(Number(event.target.value))}
         className="w-full h-10 bg-secondary/50 border border-border rounded-lg px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/40 transition-all"
       />
-    </label>
+    </div>
   );
 }
 
@@ -730,6 +850,23 @@ function tabSingular(tab: CatalogTab) {
   if (tab === "carreras") return "carrera";
   if (tab === "niveles") return "nivel";
   return "trámite";
+}
+
+function getCatalogDisplayName(tab: CatalogTab, value: PanelState["value"]) {
+  if (tab === "facultades") {
+    const item = value as Facultad;
+    return `la facultad ${item.codigo} - ${item.nombre}`;
+  }
+
+  if (tab === "carreras") {
+    return `la carrera ${(value as CarreraCatalogo).nombre}`;
+  }
+
+  if (tab === "niveles") {
+    return `el nivel ${(value as NivelCatalogo).nombre}`;
+  }
+
+  return `el trámite ${(value as TramiteCatalogo).nombre}`;
 }
 
 

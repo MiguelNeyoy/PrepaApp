@@ -211,6 +211,21 @@
     input.value = input.value.replace(/\D/g, '').slice(0, 20);
   }
 
+  function enableSubmittingState(form) {
+    var button = form.querySelector('button[type="submit"]');
+    if (!button) return;
+
+    form.classList.add('is-submitting');
+    form.setAttribute('aria-busy', 'true');
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+
+    var label = button.querySelector('.button-label');
+    if (label) {
+      label.textContent = button.getAttribute('data-loading-text') || 'Cargando...';
+    }
+  }
+
   Array.prototype.forEach.call(document.querySelectorAll('select'), function (select) {
     buildCustomSelect(select);
   });
@@ -244,6 +259,18 @@
     formatDigitsOnly(input);
     input.addEventListener('input', function () {
       formatDigitsOnly(input);
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('form'), function (form) {
+    form.addEventListener('submit', function (event) {
+      if (form.getAttribute('data-submitting') === 'true') {
+        event.preventDefault();
+        return;
+      }
+
+      form.setAttribute('data-submitting', 'true');
+      enableSubmittingState(form);
     });
   });
 

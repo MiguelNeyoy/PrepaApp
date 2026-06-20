@@ -168,8 +168,9 @@ if ($catalogJson === false) {
                 <input name="matricula" class="matricula" value="<?php echo h($matriculaVerificada); ?>" required pattern="[0-9]{7}-[0-9]" placeholder="Ingresa tu matricula" inputmode="numeric" maxlength="9">
               </label>
               <div class="actions wizard-actions">
-                <button type="submit" class="action-button">
-                  <span>Continuar</span>
+                <button type="submit" class="action-button" data-loading-text="Verificando...">
+                  <span class="button-label">Continuar</span>
+                  <span class="loading-spinner" aria-hidden="true"></span>
                   <svg viewBox="0 0 24 24" aria-hidden="true" class="button-icon">
                     <path d="M5 12h14"></path>
                     <path d="m13 6 6 6-6 6"></path>
@@ -288,8 +289,9 @@ if ($catalogJson === false) {
                   </svg>
                   <span>Regresar</span>
                 </a>
-                <button type="submit" class="action-button">
-                  <span>Enviar solicitud</span>
+                <button type="submit" class="action-button" data-loading-text="Enviando...">
+                  <span class="button-label">Enviar solicitud</span>
+                  <span class="loading-spinner" aria-hidden="true"></span>
                   <svg viewBox="0 0 24 24" aria-hidden="true" class="button-icon">
                     <path d="M22 2 11 13"></path>
                     <path d="m22 2-7 20-4-9-9-4 20-7z"></path>

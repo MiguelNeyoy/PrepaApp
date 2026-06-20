@@ -615,6 +615,15 @@ export async function updateFacultad(facultad: Facultad) {
   if (error) throw error;
 }
 
+export async function deleteFacultad(codigo: string) {
+  const { error } = await supabase
+    .from("facultades")
+    .delete()
+    .eq("codigo", codigo);
+
+  if (error) throw error;
+}
+
 export async function createCarrera(carrera: Omit<CarreraCatalogo, "id">) {
   const { error } = await supabase
     .from("carreras")
@@ -638,6 +647,15 @@ export async function updateCarrera(carrera: CarreraCatalogo) {
       activo: carrera.activo,
     })
     .eq("id", carrera.id);
+
+  if (error) throw error;
+}
+
+export async function deleteCarrera(id: string) {
+  const { error } = await supabase
+    .from("carreras")
+    .delete()
+    .eq("id", id);
 
   if (error) throw error;
 }
@@ -674,6 +692,15 @@ export async function updateNivel(nivel: NivelCatalogo) {
   if (error) throw error;
 }
 
+export async function deleteNivel(id: string) {
+  const { error } = await supabase
+    .from("niveles_estudio")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
 export async function createTramite(tramite: TramiteCatalogo) {
   const { error } = await supabase
     .from("tramites")
@@ -682,6 +709,15 @@ export async function createTramite(tramite: TramiteCatalogo) {
       nombre: tramite.nombre.trim(),
       activo: tramite.activo,
     });
+
+  if (error) throw error;
+}
+
+export async function deleteTramite(id: string) {
+  const { error } = await supabase
+    .from("tramites")
+    .delete()
+    .eq("id", id);
 
   if (error) throw error;
 }

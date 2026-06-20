@@ -486,6 +486,11 @@ button:hover,
   background: var(--blue-dark);
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.82;
+}
+
 .secondary-action {
   border: 1px solid var(--line);
   background: #ffffff;
@@ -514,6 +519,36 @@ button:hover,
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.loading-spinner {
+  display: none;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.38);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.form.is-submitting .loading-spinner {
+  display: inline-block;
+}
+
+.form.is-submitting button[type="submit"] .button-icon {
+  display: none;
+}
+
+.form.is-submitting .secondary-action {
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 fieldset:disabled {

@@ -10,8 +10,12 @@ import {
   createManagedUser,
   createNivel,
   createTramite,
+  deleteCarrera,
+  deleteFacultad,
+  deleteNivel,
   deletePreviousCycle as deletePreviousCycleRecord,
   deleteAlumno as deleteAlumnoRecord,
+  deleteTramite,
   fetchAlumnos,
   fetchCatalogos,
   fetchCatalogosAdmin,
@@ -34,6 +38,17 @@ import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CarreraCa
 
 function getErrorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback;
+}
+
+function getCatalogDeleteErrorMessage(err: unknown, itemLabel: string) {
+  const error = err as { code?: string; message?: string; details?: string } | null;
+  const rawMessage = `${error?.message ?? ""} ${error?.details ?? ""}`.toLowerCase();
+
+  if (error?.code === "23503" || rawMessage.includes("foreign key") || rawMessage.includes("referenced")) {
+    return `No se puede eliminar ${itemLabel} porque ya está en uso. Puedes desactivarlo para que deje de aparecer como opción.`;
+  }
+
+  return getErrorMessage(err, `No se pudo eliminar ${itemLabel}.`);
 }
 
 class AppErrorBoundary extends Component<
@@ -391,6 +406,18 @@ export default function App() {
     }
   }, [refreshCatalogos]);
 
+  const handleDeleteFacultad = useCallback(async (facultad: Facultad) => {
+    try {
+      await deleteFacultad(facultad.codigo);
+      await refreshCatalogos();
+      notifyDatabaseSuccess("Facultad eliminada", `${facultad.codigo} - ${facultad.nombre}`);
+    } catch (err) {
+      const message = getCatalogDeleteErrorMessage(err, "la facultad");
+      notifyDatabaseError(new Error(message), message);
+      throw new Error(message);
+    }
+  }, [refreshCatalogos]);
+
   const handleCreateCarrera = useCallback(async (carrera: Omit<CarreraCatalogo, "id">) => {
     try {
       await createCarrera(carrera);
@@ -410,6 +437,18 @@ export default function App() {
     } catch (err) {
       notifyDatabaseError(err, "No se pudo actualizar la carrera.");
       throw err;
+    }
+  }, [refreshCatalogos]);
+
+  const handleDeleteCarrera = useCallback(async (carrera: CarreraCatalogo) => {
+    try {
+      await deleteCarrera(carrera.id);
+      await refreshCatalogos();
+      notifyDatabaseSuccess("Carrera eliminada", carrera.nombre);
+    } catch (err) {
+      const message = getCatalogDeleteErrorMessage(err, "la carrera");
+      notifyDatabaseError(new Error(message), message);
+      throw new Error(message);
     }
   }, [refreshCatalogos]);
 
@@ -435,6 +474,18 @@ export default function App() {
     }
   }, [refreshCatalogos]);
 
+  const handleDeleteNivel = useCallback(async (nivel: NivelCatalogo) => {
+    try {
+      await deleteNivel(nivel.id);
+      await refreshCatalogos();
+      notifyDatabaseSuccess("Nivel eliminado", nivel.nombre);
+    } catch (err) {
+      const message = getCatalogDeleteErrorMessage(err, "el nivel");
+      notifyDatabaseError(new Error(message), message);
+      throw new Error(message);
+    }
+  }, [refreshCatalogos]);
+
   const handleCreateTramite = useCallback(async (tramite: TramiteCatalogo) => {
     try {
       await createTramite(tramite);
@@ -454,6 +505,18 @@ export default function App() {
     } catch (err) {
       notifyDatabaseError(err, "No se pudo actualizar el trámite.");
       throw err;
+    }
+  }, [refreshCatalogos]);
+
+  const handleDeleteTramite = useCallback(async (tramite: TramiteCatalogo) => {
+    try {
+      await deleteTramite(tramite.id);
+      await refreshCatalogos();
+      notifyDatabaseSuccess("Trámite eliminado", tramite.nombre);
+    } catch (err) {
+      const message = getCatalogDeleteErrorMessage(err, "el trámite");
+      notifyDatabaseError(new Error(message), message);
+      throw new Error(message);
     }
   }, [refreshCatalogos]);
 
@@ -668,12 +731,16 @@ export default function App() {
                 onAdd={addAlumno}
                 onCreateFacultad={handleCreateFacultad}
                 onUpdateFacultad={handleUpdateFacultad}
+                onDeleteFacultad={handleDeleteFacultad}
                 onCreateCarrera={handleCreateCarrera}
                 onUpdateCarrera={handleUpdateCarrera}
+                onDeleteCarrera={handleDeleteCarrera}
                 onCreateNivel={handleCreateNivel}
                 onUpdateNivel={handleUpdateNivel}
+                onDeleteNivel={handleDeleteNivel}
                 onCreateTramite={handleCreateTramite}
                 onUpdateTramite={handleUpdateTramite}
+                onDeleteTramite={handleDeleteTramite}
                 profiles={profiles}
                 cycleSummaries={cycleSummaries}
                 onCreateUser={handleCreateManagedUser}
