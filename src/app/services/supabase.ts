@@ -99,6 +99,12 @@ type SolicitudDetalleRow = {
   anio: number;
 };
 
+type SupabaseDbError = {
+  code?: string;
+  message?: string;
+  details?: string;
+};
+
 function toNivelEstudio(value: string): NivelEstudio {
   return value as NivelEstudio;
 }
@@ -240,10 +246,30 @@ function toSolicitudPayload(alumno: Alumno, catalogos: Catalogos) {
     periodo_anio: alumno.anio,
   };
 
-  const matricula = alumno.matricula.trim();
-  if (matricula) payload.matricula = matricula;
+  payload.matricula = alumno.matricula.trim() || null;
 
   return payload;
+}
+
+function getSolicitudSaveError(error: unknown) {
+  const dbError = error as SupabaseDbError | null;
+  const raw = `${dbError?.message ?? ""} ${dbError?.details ?? ""}`.toLowerCase();
+
+  if (
+    dbError?.code === "23505" &&
+    (raw.includes("solicitudes_matricula_activa_unique") || raw.includes("matricula"))
+  ) {
+    return new Error("Ya existe una solicitud activa para esta matricula.");
+  }
+
+  if (
+    dbError?.code === "23514" &&
+    (raw.includes("solicitudes_matricula_format") || raw.includes("matricula"))
+  ) {
+    return new Error("La matricula debe tener el formato 1234567-8 o dejarse vacia.");
+  }
+
+  return error;
 }
 
 function toSolicitudPatch(changes: AlumnoBulkChanges) {
@@ -263,6 +289,43 @@ function toSolicitudPatch(changes: AlumnoBulkChanges) {
 export async function signInAdmin(email: string, password: string) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
+}
+
+export async function requestPasswordRecovery(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) throw error;
+}
+
+function getRecoveryToken(input: string) {
+  const value = input.trim();
+  try {
+    const url = new URL(value);
+    return {
+      token: null,
+      tokenHash: url.searchParams.get("token_hash") ?? url.searchParams.get("token"),
+    };
+  } catch {
+    return { token: value, tokenHash: null };
+  }
+}
+
+export async function verifyPasswordRecoveryInput(email: string, recoveryInput: string) {
+  const { token, tokenHash } = getRecoveryToken(recoveryInput);
+  if (!token && !tokenHash) throw new Error("El codigo o enlace de recuperacion no es valido.");
+
+  const { error: verificationError } = tokenHash
+    ? await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" })
+    : await supabase.auth.verifyOtp({ email, token: token!, type: "recovery" });
+  if (verificationError) throw verificationError;
+}
+
+export async function updatePasswordFromRecovery(password: string) {
+  try {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+  } finally {
+    await supabase.auth.signOut();
+  }
 }
 
 export async function signOutAdmin() {
@@ -339,6 +402,15 @@ export async function createManagedUser(input: {
   if (!data?.profile) throw new Error("El usuario se creó, pero la función no regresó el perfil.");
 
   return mapManagedProfile(data.profile as ProfileAdminRow);
+}
+
+export async function deleteManagedUser(userId: string) {
+  const { data, error } = await supabase.functions.invoke("admin-delete-user", {
+    body: { userId },
+  });
+
+  if (error) throw error;
+  if (!data?.userId) throw new Error("La funcion no confirmo la eliminacion del usuario.");
 }
 
 export async function updateProfileRoleActive(
@@ -536,7 +608,7 @@ export async function createAlumno(alumno: Alumno, catalogos: Catalogos): Promis
     .select("id")
     .single<{ id: string }>();
 
-  if (error) throw error;
+  if (error) throw getSolicitudSaveError(error);
 
   const next = await fetchAlumnos(catalogos);
   const created = next.find(item => item.id === data.id);
@@ -551,7 +623,7 @@ export async function updateAlumno(alumno: Alumno, catalogos: Catalogos): Promis
     .update(payload)
     .eq("id", alumno.id);
 
-  if (error) throw error;
+  if (error) throw getSolicitudSaveError(error);
 
   const next = await fetchAlumnos(catalogos);
   const updated = next.find(item => item.id === alumno.id);

@@ -227,6 +227,10 @@ function formatMatricula(value: string) {
   return `${digits.slice(0, 7)}-${digits.slice(7)}`;
 }
 
+function isValidMatricula(value: string) {
+  return /^\d{7}-\d$/.test(value);
+}
+
 function DateField({
   label,
   value,
@@ -574,6 +578,12 @@ function EditModal({
 
     if (missing) {
       setError(`Completa el campo ${missing.label}.`);
+      return;
+    }
+
+    const matricula = form.matricula.trim();
+    if (matricula && !isValidMatricula(matricula)) {
+      setError("La matricula debe tener el formato 1234567-8 o dejarse vacia.");
       return;
     }
 

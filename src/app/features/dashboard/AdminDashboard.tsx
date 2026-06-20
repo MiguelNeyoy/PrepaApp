@@ -107,11 +107,6 @@ function AboutModal({ onClose }: { onClose: () => void }) {
 
           <section className="rounded-lg border border-border bg-secondary/20 p-4 space-y-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Realizado por</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">Francisco Castro</p>
-            </div>
-
-            <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Repositorio</p>
               <div className="mt-1 flex max-w-full items-center gap-2">
                 <a
@@ -208,11 +203,13 @@ export function AppTitleBar({
         floating ? "" : seamless ? "bg-background" : "bg-card border-b border-border"
       }`}
     >
-      {toast && !integratedLoginTitleBar && (
+      {toast && (
         <div
           key={toast.id}
           data-tauri-drag-region
-          className={`pointer-events-none absolute inset-y-0 left-[170px] right-[240px] z-0 flex items-center justify-center px-3 text-[11px] font-bold ${toastTone} app-titlebar-toast-in`}
+          className={`pointer-events-none absolute inset-y-0 z-20 flex items-center justify-center px-3 text-[11px] font-bold ${
+            integratedLoginTitleBar ? "left-[46%] right-[160px]" : "left-[170px] right-[240px]"
+          } ${toastTone} app-titlebar-toast-in`}
         >
           <span className="mr-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-current" />
           <span className="min-w-0 truncate">{toast.message}</span>
@@ -243,7 +240,7 @@ export function AppTitleBar({
           integratedLoginTitleBar ? "text-muted-foreground/80" : "text-muted-foreground"
         }`}
       >
-        <span className={`truncate transition-opacity ${toast && !integratedLoginTitleBar ? "opacity-0" : "opacity-100"}`}>
+        <span className={`truncate transition-opacity ${toast ? "opacity-0" : "opacity-100"}`}>
           {compact ? "Acceso" : "Panel administrativo"}
         </span>
       </div>
@@ -314,33 +311,246 @@ export function AppTitleBar({
   );
 }
 
+function isEmailRateLimitError(error: unknown) {
+  const authError = error as { status?: number; message?: string } | null;
+  return authError?.status === 429 || /rate limit|too many requests/i.test(authError?.message ?? "");
+}
+
+function formatWait(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function PasswordRecoveryModal({
+  initialEmail,
+  onClose,
+  onRequestPasswordRecovery,
+  onVerifyPasswordRecovery,
+  onResetPassword,
+}: {
+  initialEmail: string;
+  onClose: () => void;
+  onRequestPasswordRecovery: (email: string) => Promise<void> | void;
+  onVerifyPasswordRecovery: (email: string, recoveryInput: string) => Promise<void> | void;
+  onResetPassword: (email: string, password: string) => Promise<void> | void;
+}) {
+  const [email, setEmail] = useState(initialEmail);
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [step, setStep] = useState<"request" | "link" | "password" | "complete">("request");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [retryAt, setRetryAt] = useState<number | null>(null);
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
+
+  useEffect(() => {
+    if (!retryAt) return;
+
+    const updateRemainingTime = () => {
+      const nextSeconds = Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+      setSecondsRemaining(nextSeconds);
+      if (nextSeconds === 0) setRetryAt(null);
+    };
+
+    updateRemainingTime();
+    const interval = window.setInterval(updateRemainingTime, 1000);
+    return () => window.clearInterval(interval);
+  }, [retryAt]);
+
+  const sendCode = async () => {
+    const normalizedEmail = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError("Ingresa un correo valido para continuar.");
+      return;
+    }
+    if (secondsRemaining > 0) return;
+
+    setLoading(true);
+    setError("");
+    try {
+      await onRequestPasswordRecovery(normalizedEmail);
+      setEmail(normalizedEmail);
+      setRetryAt(Date.now() + 60_000);
+      setStep("link");
+    } catch (requestError) {
+      if (isEmailRateLimitError(requestError)) {
+        setRetryAt(Date.now() + 60 * 60_000);
+        setError("Se alcanzo el limite de correos de Supabase. Espera aproximadamente una hora antes de solicitar otro codigo.");
+      } else {
+        setError(requestError instanceof Error ? requestError.message : "No se pudo enviar el codigo de recuperacion.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void sendCode();
+  };
+
+  const handleLinkSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!recoveryInput.trim()) {
+      setError("Pega el enlace de recuperacion para continuar.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await onVerifyPasswordRecovery(email, recoveryInput);
+      setStep("password");
+    } catch (verificationError) {
+      setError(verificationError instanceof Error ? verificationError.message : "No se pudo verificar el enlace de recuperacion.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!password || !confirmPassword) {
+      setError("Completa la nueva contrasena.");
+      return;
+    }
+    if (password.length < 8) {
+      setError("La nueva contrasena debe tener al menos 8 caracteres.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Las contrasenas no coinciden.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await onResetPassword(email, password);
+      setStep("complete");
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "No se pudo actualizar la contrasena.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendLabel = secondsRemaining > 0 ? `Reenviar enlace en ${formatWait(secondsRemaining)}` : "Reenviar enlace";
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-5 backdrop-blur-sm">
+      <section role="dialog" aria-modal="true" aria-labelledby="password-recovery-title" className="w-full max-w-sm rounded-xl border border-border bg-card shadow-xl">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h2 id="password-recovery-title" className="text-base font-bold text-foreground">Restablecer contrasena</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{step === "request" ? "Solicita un enlace para tu correo." : step === "link" ? "Verifica el enlace recibido antes de continuar." : step === "password" ? "Crea una nueva contrasena." : "Tu contrasena ya fue actualizada."}</p>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" aria-label="Cerrar recuperacion de contrasena">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {step === "request" && (
+          <form onSubmit={handleRequestSubmit} className="space-y-4 p-5">
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Correo electronico</label>
+              <input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="usuario@uas.edu.mx" autoComplete="email" className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-all focus:border-amber-400/50 focus:ring-2 focus:ring-amber-400/25" />
+            </div>
+            {error && <p className="text-xs leading-relaxed text-red-500">{error}</p>}
+            <button type="submit" disabled={loading || secondsRemaining > 0} className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-400 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-300 disabled:opacity-70">
+              {loading ? "Enviando..." : secondsRemaining > 0 ? `Disponible en ${formatWait(secondsRemaining)}` : "Enviar enlace"}
+            </button>
+          </form>
+        )}
+
+        {step === "link" && (
+          <form onSubmit={handleLinkSubmit} className="space-y-4 p-5">
+            <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs leading-relaxed text-foreground">
+              Recibiras un correo electronico con un <a href="#example-link" onClick={event => event.preventDefault()} className="font-semibold text-blue-700 underline underline-offset-2 dark:text-blue-300">hipervinculo</a> con el texto <strong>Reset Password</strong>. No hagas clic en el. Haz clic derecho sobre el vinculo y selecciona <strong>Copiar direccion del vinculo</strong>. Pegalo aqui para verificarlo.
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Enlace de recuperacion</label>
+              <input value={recoveryInput} onChange={event => setRecoveryInput(event.target.value)} placeholder="Pega el enlace recibido por correo" autoComplete="off" className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-all focus:border-amber-400/50 focus:ring-2 focus:ring-amber-400/25" />
+            </div>
+            {error && <p className="text-xs leading-relaxed text-red-500">{error}</p>}
+            <button type="submit" disabled={loading} className="w-full rounded-lg bg-amber-400 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-300 disabled:opacity-70">{loading ? "Verificando..." : "Verificar enlace"}</button>
+            <button type="button" onClick={() => void sendCode()} disabled={loading || secondsRemaining > 0} className="w-full text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50">{resendLabel}</button>
+          </form>
+        )}
+
+        {step === "password" && (
+          <form onSubmit={handlePasswordSubmit} className="space-y-4 p-5">
+            <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><Check className="h-4 w-4" /> Enlace verificado.</div>
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Nueva contrasena</label>
+              <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-all focus:border-amber-400/50 focus:ring-2 focus:ring-amber-400/25" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Confirmar contrasena</label>
+              <input type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground outline-none transition-all focus:border-amber-400/50 focus:ring-2 focus:ring-amber-400/25" />
+            </div>
+            {error && <p className="text-xs leading-relaxed text-red-500">{error}</p>}
+            <button type="submit" disabled={loading} className="w-full rounded-lg bg-amber-400 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-300 disabled:opacity-70">{loading ? "Actualizando..." : "Actualizar contrasena"}</button>
+          </form>
+        )}
+
+        {step === "complete" && (
+          <div className="space-y-5 p-5">
+            <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"><Check className="h-4 w-4" /> Contrasena actualizada correctamente.</div>
+            <button type="button" onClick={onClose} className="w-full rounded-lg bg-amber-400 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-300">Volver al inicio</button>
+          </div>
+        )}
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 export function LoginScreen({
   account,
+  savedCredentials,
   onLogin,
+  onNotify,
+  onRequestPasswordRecovery,
+  onVerifyPasswordRecovery,
+  onResetPassword,
+  onClearSavedCredentials,
 }: {
   account: Account;
-  onLogin: (email: string, password: string) => Promise<void> | void;
+  savedCredentials: { email: string; password: string } | null;
+  onLogin: (email: string, password: string, rememberCredentials: boolean) => Promise<void> | void;
+  onNotify: (variant: TitlebarToast["variant"], message: string) => void;
+  onRequestPasswordRecovery: (email: string) => Promise<void> | void;
+  onVerifyPasswordRecovery: (email: string, recoveryInput: string) => Promise<void> | void;
+  onResetPassword: (email: string, password: string) => Promise<void> | void;
+  onClearSavedCredentials: () => Promise<void> | void;
 }) {
-  const [email, setEmail] = useState(account.email);
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(savedCredentials?.email ?? account.email);
+  const [password, setPassword] = useState(savedCredentials?.password ?? "");
+  const [rememberCredentials, setRememberCredentials] = useState(Boolean(savedCredentials));
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [hasLoginError, setHasLoginError] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!email.trim() || !password.trim()) {
-      setError("Por favor completa todos los campos.");
+      setHasLoginError(true);
+      onNotify("error", "Por favor completa todos los campos.");
       return;
     }
 
-    setError("");
+    setHasLoginError(false);
     setLoading(true);
     try {
-      await onLogin(email.trim(), password);
+      await onLogin(email.trim(), password, rememberCredentials);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Correo o contraseña incorrectos.");
+      setHasLoginError(true);
+      onNotify("error", err instanceof Error ? err.message : "Correo o contrasena incorrectos.");
     } finally {
       setLoading(false);
     }
@@ -348,6 +558,15 @@ export function LoginScreen({
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-background">
+      {recoveryOpen && (
+        <PasswordRecoveryModal
+          initialEmail={email}
+          onClose={() => setRecoveryOpen(false)}
+          onRequestPasswordRecovery={onRequestPasswordRecovery}
+          onVerifyPasswordRecovery={onVerifyPasswordRecovery}
+          onResetPassword={onResetPassword}
+        />
+      )}
       <svg
         className="absolute inset-0 h-full w-full pointer-events-none"
         viewBox="0 0 860 540"
@@ -433,11 +652,11 @@ export function LoginScreen({
                   value={email}
                   onChange={event => {
                     setEmail(event.target.value);
-                    setError("");
+                    setHasLoginError(false);
                   }}
                   placeholder="usuario@uas.edu.mx"
                   autoComplete="email"
-                  className={`w-full bg-card border rounded-lg px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/50 transition-all ${error ? "border-red-400/60" : "border-border"}`}
+                  className={`w-full bg-card border rounded-lg px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/50 transition-all ${hasLoginError ? "border-red-400/60" : "border-border"}`}
                 />
               </div>
 
@@ -448,14 +667,14 @@ export function LoginScreen({
                 <div className="relative">
                   <input
                     type={showPassword ? "text" : "password"}
-                    value={password}
+                  value={password}
                     onChange={event => {
                       setPassword(event.target.value);
-                      setError("");
+                      setHasLoginError(false);
                     }}
                     placeholder="********"
                     autoComplete="current-password"
-                    className={`w-full bg-card border rounded-lg pl-3.5 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/50 transition-all ${error ? "border-red-400/60" : "border-border"}`}
+                    className={`w-full bg-card border rounded-lg pl-3.5 pr-10 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/50 transition-all ${hasLoginError ? "border-red-400/60" : "border-border"}`}
                   />
                   <button
                     type="button"
@@ -470,12 +689,28 @@ export function LoginScreen({
                 </div>
               </div>
 
-              {error && (
-                <div className="flex items-center gap-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-500/20 rounded-lg px-3 py-2">
-                  <span className="w-1 h-1 rounded-full bg-red-400 flex-shrink-0" />
-                  <p className="text-[11px] text-red-500">{error}</p>
-                </div>
-              )}
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex min-w-0 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={rememberCredentials}
+                    onChange={event => {
+                      const checked = event.target.checked;
+                      setRememberCredentials(checked);
+                      if (!checked) {
+                        void Promise.resolve(onClearSavedCredentials()).catch(() => {
+                          onNotify("error", "No se pudieron eliminar las credenciales guardadas.");
+                        });
+                      }
+                    }}
+                    className="h-3.5 w-3.5 rounded border-border accent-amber-400"
+                  />
+                  <span>Recordar credenciales</span>
+                </label>
+                <button type="button" onClick={() => setRecoveryOpen(true)} className="shrink-0 text-xs font-semibold text-amber-600 transition-colors hover:text-amber-500 dark:text-amber-400">
+                  Olvidaste tu contrasena?
+                </button>
+              </div>
 
               <button
                 type="submit"
@@ -735,6 +970,7 @@ export function AdminDashboard({
   cycleSummaries,
   onCreateUser,
   onUpdateProfile,
+  onDeleteUser,
   onDeletePreviousCycle,
   account,
   onAccountUpdate,
@@ -766,6 +1002,7 @@ export function AdminDashboard({
   cycleSummaries: CycleSummary[];
   onCreateUser: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
   onUpdateProfile: (id: string, changes: { displayName?: string; role?: ManagedRole; active?: boolean }) => Promise<void> | void;
+  onDeleteUser: (profile: ManagedProfile) => Promise<void> | void;
   onDeletePreviousCycle: (cicloAnioFin: number) => Promise<void> | void;
   account: Account;
   onAccountUpdate: (account: Account) => Promise<void> | void;
@@ -891,9 +1128,10 @@ export function AdminDashboard({
           <div className="flex-1 min-h-0 p-6 flex flex-col overflow-hidden">
             <UsuariosTab
               profiles={profiles}
-              account={account}
-              onCreateUser={onCreateUser}
-              onUpdateProfile={onUpdateProfile}
+            account={account}
+            onCreateUser={onCreateUser}
+            onUpdateProfile={onUpdateProfile}
+            onDeleteUser={onDeleteUser}
             />
           </div>
         ) : (

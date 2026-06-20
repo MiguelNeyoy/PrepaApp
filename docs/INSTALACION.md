@@ -61,3 +61,10 @@ pnpm run desktop:build
 
 Los artefactos generados quedan fuera de Git por `.gitignore`: `dist/` y `src-tauri/target/`.
 
+## Recuperacion de contrasena
+
+La aplicacion usa el flujo de recuperacion de Supabase sin requerir un sitio web ni una URL de retorno. El usuario solicita el correo, copia el enlace recibido sin abrirlo y lo pega en la aplicacion junto con la nueva contrasena.
+
+Si tienes permiso para editar la plantilla `Authentication > Email Templates > Reset Password`, tambien puedes mostrar un codigo con `{{ .Token }}`. La aplicacion acepta ambos formatos.
+
+Si Supabase rechaza el envio por limite de correos, la aplicacion mostrara una espera estimada de una hora antes de permitir otro intento.

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Pencil, Save, Search, ShieldCheck, UserPlus, Users, X } from "lucide-react";
+import { Pencil, Save, Search, ShieldCheck, Trash2, UserPlus, Users, X } from "lucide-react";
 import { CustomSelect, Field } from "../../components/controls";
 import type { Account, ManagedProfile, ManagedRole } from "../../domain";
 
@@ -191,19 +191,78 @@ function UserFormModal({
   );
 }
 
+function UserDeleteModal({
+  profile,
+  onClose,
+  onDelete,
+}: {
+  profile: ManagedProfile;
+  onClose: () => void;
+  onDelete: (profile: ManagedProfile) => Promise<void> | void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setError("");
+    try {
+      await onDelete(profile);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo eliminar el usuario.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 p-5 backdrop-blur-sm">
+      <section role="dialog" aria-modal="true" aria-labelledby="delete-user-title" className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-card shadow-xl app-modal-in">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <h2 id="delete-user-title" className="text-base font-bold text-foreground">Eliminar usuario</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Esta accion no se puede deshacer.</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={deleting} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50" aria-label="Cerrar eliminacion de usuario">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3 p-5">
+          <p className="text-sm leading-relaxed text-foreground">Eliminaras el acceso de <strong>{profile.displayName}</strong>.</p>
+          <p className="text-xs text-muted-foreground">{profile.email}</p>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border bg-secondary/20 px-5 py-4">
+          <button type="button" onClick={onClose} disabled={deleting} className="h-9 rounded-lg border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-secondary disabled:opacity-50">Cancelar</button>
+          <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="inline-flex h-9 items-center gap-2 rounded-lg bg-destructive px-4 text-xs font-bold text-white transition-colors hover:bg-destructive/90 disabled:opacity-60">
+            <Trash2 className="h-3.5 w-3.5" />
+            {deleting ? "Eliminando..." : "Eliminar"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function UsuariosTab({
   profiles,
   account,
   onCreateUser,
   onUpdateProfile,
+  onDeleteUser,
 }: {
   profiles: ManagedProfile[];
   account: Account;
   onCreateUser: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
   onUpdateProfile: (id: string, changes: { displayName?: string; role?: ManagedRole; active?: boolean }) => Promise<void> | void;
+  onDeleteUser: (profile: ManagedProfile) => Promise<void> | void;
 }) {
   const [query, setQuery] = useState("");
   const [modal, setModal] = useState<{ mode: "create" } | { mode: "edit"; profile: ManagedProfile } | null>(null);
+  const [profileToDelete, setProfileToDelete] = useState<ManagedProfile | null>(null);
 
   const filteredProfiles = useMemo(() => {
     const needle = normalizeText(query);
@@ -226,6 +285,13 @@ export function UsuariosTab({
           onClose={() => setModal(null)}
           onCreate={onCreateUser}
           onUpdate={onUpdateProfile}
+        />
+      )}
+      {profileToDelete && (
+        <UserDeleteModal
+          profile={profileToDelete}
+          onClose={() => setProfileToDelete(null)}
+          onDelete={onDeleteUser}
         />
       )}
 
@@ -279,10 +345,22 @@ export function UsuariosTab({
                 <td className="px-4 py-3"><RoleBadge role={profile.role} /></td>
                 <td className="px-4 py-3"><StatusBadge active={profile.active} /></td>
                 <td className="px-4 py-3 text-right">
-                  <button type="button" onClick={() => setModal({ mode: "edit", profile })} className="h-8 px-3 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary transition-colors inline-flex items-center gap-2">
-                    <Pencil className="h-3.5 w-3.5" />
-                    Editar
-                  </button>
+                  <div className="inline-flex items-center gap-2">
+                    <button type="button" onClick={() => setModal({ mode: "edit", profile })} className="h-8 px-3 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary transition-colors inline-flex items-center gap-2">
+                      <Pencil className="h-3.5 w-3.5" />
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProfileToDelete(profile)}
+                      disabled={profile.id === account.id}
+                      title={profile.id === account.id ? "No puedes eliminar tu propio perfil" : "Eliminar usuario"}
+                      aria-label={profile.id === account.id ? "No puedes eliminar tu propio perfil" : `Eliminar a ${profile.displayName}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-destructive/30 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-card disabled:hover:text-muted-foreground"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

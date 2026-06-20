@@ -1,5 +1,6 @@
 import { Component, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Database, Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { AdminDashboard, AppTitleBar, LoginScreen } from "./features/dashboard/AdminDashboard";
 import type { TitlebarToast } from "./features/dashboard/AdminDashboard";
@@ -10,6 +11,7 @@ import {
   createManagedUser,
   createNivel,
   createTramite,
+  deleteManagedUser,
   deleteCarrera,
   deleteFacultad,
   deleteNivel,
@@ -22,6 +24,9 @@ import {
   fetchCycleSummaries,
   fetchProfiles,
   getCurrentAccount,
+  requestPasswordRecovery,
+  updatePasswordFromRecovery,
+  verifyPasswordRecoveryInput,
   signInAdmin,
   signOutAdmin,
   updateCarrera,
@@ -33,11 +38,31 @@ import {
   updateProfileRoleActive,
   updateTramite,
 } from "./services/supabase";
-import { resizeDesktopWindow } from "./utils/window";
+import { isTauriRuntime, resizeDesktopWindow } from "./utils/window";
 import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CarreraCatalogo, CycleSummary, Facultad, ManagedProfile, ManagedRole, NivelCatalogo, ThemeMode, TramiteCatalogo } from "./domain";
 
 function getErrorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback;
+}
+
+function getLoginErrorMessage(err: unknown) {
+  const error = err as { message?: string; status?: number } | null;
+  const message = error?.message?.toLowerCase() ?? "";
+
+  if (error?.status === 429 || message.includes("rate limit") || message.includes("too many requests")) {
+    return "Demasiados intentos de acceso. Espera un momento antes de volver a intentarlo.";
+  }
+  if (message.includes("invalid login credentials") || message.includes("invalid credentials")) {
+    return "Correo o contrasena incorrectos.";
+  }
+  if (message.includes("email not confirmed")) {
+    return "El correo aun no ha sido confirmado.";
+  }
+  if (message.includes("network") || message.includes("fetch")) {
+    return "No se pudo conectar con el servicio de inicio de sesion.";
+  }
+
+  return "No se pudo iniciar sesion. Verifica tus datos e intentalo de nuevo.";
 }
 
 function getCatalogDeleteErrorMessage(err: unknown, itemLabel: string) {
@@ -78,6 +103,26 @@ class AppErrorBoundary extends Component<
 
 function isBrowserOnline() {
   return typeof navigator === "undefined" ? true : navigator.onLine;
+}
+
+type SavedLoginCredentials = {
+  email: string;
+  password: string;
+};
+
+async function loadSavedLoginCredentials(): Promise<SavedLoginCredentials | null> {
+  if (!isTauriRuntime()) return null;
+  return invoke<SavedLoginCredentials | null>("load_saved_login_credentials");
+}
+
+async function saveLoginCredentials(credentials: SavedLoginCredentials) {
+  if (!isTauriRuntime()) return;
+  await invoke("save_login_credentials", credentials);
+}
+
+async function clearSavedLoginCredentials() {
+  if (!isTauriRuntime()) return;
+  await invoke("clear_saved_login_credentials");
 }
 
 function StatusScreen({
@@ -130,6 +175,7 @@ export default function App() {
   const [appError, setAppError] = useState("");
   const [isOnline, setIsOnline] = useState(isBrowserOnline);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [savedLoginCredentials, setSavedLoginCredentials] = useState<SavedLoginCredentials | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     if (typeof window === "undefined") return "light";
     return window.localStorage.getItem("app-theme") === "dark" ? "dark" : "light";
@@ -250,9 +296,13 @@ export default function App() {
   useEffect(() => {
     let active = true;
 
-    getCurrentAccount()
-      .then(async currentAccount => {
+    Promise.all([
+      getCurrentAccount(),
+      loadSavedLoginCredentials().catch(() => null),
+    ])
+      .then(async ([currentAccount, savedCredentials]) => {
         if (!active) return;
+        setSavedLoginCredentials(savedCredentials);
         if (!currentAccount) {
           setIsAuthenticated(false);
           return;
@@ -276,22 +326,58 @@ export default function App() {
     };
   }, [loadData]);
 
-  const handleLogin = useCallback(async (email: string, password: string) => {
+  const handleLogin = useCallback(async (email: string, password: string, rememberCredentials: boolean) => {
     if (!isOnline) throw new Error("No hay conexión a internet.");
 
-    setLoginLoading(true);
     setAppError("");
     try {
       await signInAdmin(email, password);
+      setLoginLoading(true);
       const currentAccount = await getCurrentAccount();
       if (!currentAccount) throw new Error("No se pudo abrir la sesión.");
       await loadData(currentAccount.role === "admin");
       setAccount(currentAccount);
       setIsAuthenticated(true);
+
+      try {
+        if (rememberCredentials) {
+          const credentials = { email, password };
+          await saveLoginCredentials(credentials);
+          setSavedLoginCredentials(credentials);
+        } else {
+          await clearSavedLoginCredentials();
+          setSavedLoginCredentials(null);
+        }
+      } catch {
+        showTitlebarToast("info", "No se pudieron guardar las credenciales en este equipo.");
+      }
+    } catch (error) {
+      throw new Error(getLoginErrorMessage(error));
     } finally {
       setLoginLoading(false);
     }
-  }, [loadData]);
+  }, [loadData, showTitlebarToast]);
+
+  const handlePasswordRecoveryRequest = useCallback(async (email: string) => {
+    if (!isOnline) throw new Error("No hay conexion a internet.");
+    await requestPasswordRecovery(email);
+  }, [isOnline]);
+
+  const handlePasswordRecoveryVerification = useCallback(async (email: string, recoveryInput: string) => {
+    if (!isOnline) throw new Error("No hay conexion a internet.");
+    await verifyPasswordRecoveryInput(email, recoveryInput);
+  }, [isOnline]);
+
+  const handlePasswordRecoveryReset = useCallback(async (email: string, password: string) => {
+    if (!isOnline) throw new Error("No hay conexion a internet.");
+    await updatePasswordFromRecovery(password);
+    setAccount(previous => ({ ...previous, email, password: "" }));
+  }, [isOnline]);
+
+  const handleClearSavedLoginCredentials = useCallback(async () => {
+    await clearSavedLoginCredentials();
+    setSavedLoginCredentials(null);
+  }, []);
 
   const addAlumno = useCallback(async (a: Alumno) => {
     if (!catalogos) throw new Error("Los catálogos todavía no están cargados.");
@@ -548,6 +634,21 @@ export default function App() {
     }
   }, [account.id]);
 
+  const handleDeleteManagedUser = useCallback(async (profile: ManagedProfile) => {
+    if (profile.id === account.id) {
+      throw new Error("No puedes eliminar tu propio perfil.");
+    }
+
+    try {
+      await deleteManagedUser(profile.id);
+      setProfiles(previous => previous.filter(item => item.id !== profile.id));
+      notifyDatabaseSuccess("Usuario eliminado", profile.displayName);
+    } catch (err) {
+      notifyDatabaseError(err, "No se pudo eliminar el usuario.");
+      throw err;
+    }
+  }, [account.id, notifyDatabaseError, notifyDatabaseSuccess]);
+
   const handleDeletePreviousCycle = useCallback(async (cicloAnioFin: number) => {
     if (!catalogos) throw new Error("Los catálogos todavía no están cargados.");
     try {
@@ -692,7 +793,16 @@ export default function App() {
 
     return (
       <div className="h-screen bg-background text-foreground overflow-hidden relative">
-        <LoginScreen account={account} onLogin={handleLogin} />
+        <LoginScreen
+          account={account}
+          savedCredentials={savedLoginCredentials}
+          onLogin={handleLogin}
+          onNotify={showTitlebarToast}
+          onRequestPasswordRecovery={handlePasswordRecoveryRequest}
+          onVerifyPasswordRecovery={handlePasswordRecoveryVerification}
+          onResetPassword={handlePasswordRecoveryReset}
+          onClearSavedCredentials={handleClearSavedLoginCredentials}
+        />
         <AppTitleBar compact floating theme={theme} toast={titlebarToast} onToggleTheme={toggleTheme} />
         {appError && (
           <div className="absolute left-1/2 bottom-5 -translate-x-1/2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 dark:border-red-500/20 dark:bg-red-950/20">
@@ -745,6 +855,7 @@ export default function App() {
                 cycleSummaries={cycleSummaries}
                 onCreateUser={handleCreateManagedUser}
                 onUpdateProfile={handleUpdateManagedProfile}
+                onDeleteUser={handleDeleteManagedUser}
                 onDeletePreviousCycle={handleDeletePreviousCycle}
                 account={account}
                 onAccountUpdate={handleAccountUpdate}

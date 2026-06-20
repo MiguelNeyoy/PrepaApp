@@ -7,6 +7,7 @@
 - `supabase/sql/20260609_portal_web_matricula.sql`: soporte del portal por matricula.
 - `supabase/sql/20260609_respaldo_entrega_catalogos.sql`: catalogos vigentes.
 - `supabase/functions/admin-create-user/index.ts`: Edge Function para alta de usuarios.
+- `supabase/functions/admin-delete-user/index.ts`: Edge Function para eliminar usuarios.
 
 ## Crear un proyecto nuevo
 
@@ -45,6 +46,14 @@ Despliegue con Supabase CLI:
 supabase functions deploy admin-create-user
 ```
 
+## Edge Function `admin-delete-user`
+
+La funcion permite eliminar un usuario desde la app. Solo acepta llamadas de administradores activos y no permite eliminar la cuenta que realiza la solicitud.
+
+```bash
+supabase functions deploy admin-delete-user
+```
+
 Define los secretos con:
 
 ```bash
@@ -59,4 +68,3 @@ supabase secrets set SUPABASE_SERVICE_ROLE_KEY=...
 - Usar solo publishable/anon key en clientes publicos.
 - Guardar `service_role` exclusivamente como secreto de Supabase o del servidor.
 - Revisar cualquier dump que incluya solicitudes o perfiles antes de compartirlo.
-
