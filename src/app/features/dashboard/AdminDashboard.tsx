@@ -8,6 +8,7 @@ import { CatalogosTab } from "../catalogos/CatalogosTab";
 import { MantenimientoTab } from "../mantenimiento/MantenimientoTab";
 import { MetricasTab } from "../metricas/MetricasTab";
 import { UsuariosTab } from "../usuarios/UsuariosTab";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { isTauriRuntime } from "../../utils/window";
 import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CarreraCatalogo, CycleSummary, Facultad, ManagedProfile, ManagedRole, NivelCatalogo, ThemeMode, TramiteCatalogo } from "../../domain";
 import uasLogo from "../../../imports/uas.png";
@@ -19,6 +20,7 @@ export type TitlebarToast = {
 };
 
 const ABOUT_REPO_URL = "https://github.com/Frankz1997/app-titulacion.git";
+const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150];
 
 function AboutModal({ onClose }: { onClose: () => void }) {
   const [closing, setClosing] = useState(false);
@@ -181,16 +183,22 @@ export function AppTitleBar({
   floating = false,
   seamless = false,
   theme,
+  uiScale,
+  showUiScaleControl = false,
   toast,
   onToggleTheme,
+  onUiScaleChange,
   refreshAction,
 }: {
   compact?: boolean;
   floating?: boolean;
   seamless?: boolean;
   theme: ThemeMode;
+  uiScale: number;
+  showUiScaleControl?: boolean;
   toast?: TitlebarToast | null;
   onToggleTheme: () => void;
+  onUiScaleChange: (scale: number) => void;
   refreshAction?: {
     label: string;
     loading?: boolean;
@@ -226,7 +234,7 @@ export function AppTitleBar({
           key={toast.id}
           data-tauri-drag-region
           className={`pointer-events-none absolute inset-y-0 z-20 flex items-center justify-center px-3 text-[11px] font-bold ${
-            integratedLoginTitleBar ? "left-[46%] right-[160px]" : "left-[170px] right-[240px]"
+            integratedLoginTitleBar ? "left-[46%] right-[160px]" : showUiScaleControl ? "left-[200px] right-[240px]" : "left-[170px] right-[240px]"
           } ${toastTone} app-titlebar-toast-in`}
         >
           <span className="mr-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-current" />
@@ -237,13 +245,39 @@ export function AppTitleBar({
       <div
         data-tauri-drag-region
         className={`relative z-10 h-full min-w-0 flex items-center gap-2 px-3 ${
-          integratedLoginTitleBar ? "flex-1" : "w-[170px]"
+          integratedLoginTitleBar ? "flex-1" : showUiScaleControl ? "w-[200px]" : "w-[170px]"
         }`}
       >
         {!integratedLoginTitleBar && (
           <>
             <img src={uasLogo} alt="UAS" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
-            <span className="text-[11px] font-bold text-foreground truncate">APP Titulación</span>
+            <span className="min-w-0 flex-1 text-[11px] font-bold text-foreground truncate">APP Titulación</span>
+            {showUiScaleControl && (
+              <div className="flex h-full flex-shrink-0 items-center">
+                <Select value={String(uiScale)} onValueChange={value => void onUiScaleChange(Number(value))}>
+                  <SelectTrigger
+                    size="sm"
+                    title="Escala de interfaz"
+                    aria-label="Escala de interfaz"
+                    onMouseDown={event => event.stopPropagation()}
+                    className="h-full w-[48px] gap-0.5 border-0 bg-transparent px-0 text-[10px] font-semibold tabular-nums text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground focus-visible:border-0 focus-visible:ring-0 [&_svg]:size-3 [&_svg]:opacity-70"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="min-w-[52px] rounded-lg border-border/80 bg-popover p-1 shadow-lg shadow-black/10">
+                    {UI_SCALE_OPTIONS.map(scale => (
+                      <SelectItem
+                        key={scale}
+                        value={String(scale)}
+                        className="justify-center px-2 py-1 text-[10px] font-medium tabular-nums data-[state=checked]:bg-secondary data-[state=checked]:text-foreground [&>span:first-child]:hidden"
+                      >
+                        {scale}%
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </>
         )}
       </div>

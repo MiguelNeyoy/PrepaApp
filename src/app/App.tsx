@@ -1,6 +1,7 @@
 import { Component, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Database, Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { AdminDashboard, AppTitleBar, LoginScreen } from "./features/dashboard/AdminDashboard";
 import type { TitlebarToast } from "./features/dashboard/AdminDashboard";
@@ -40,6 +41,17 @@ import {
 } from "./services/supabase";
 import { isTauriRuntime, resizeDesktopWindow } from "./utils/window";
 import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CarreraCatalogo, CycleSummary, Facultad, ManagedProfile, ManagedRole, NivelCatalogo, ThemeMode, TramiteCatalogo } from "./domain";
+
+const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150] as const;
+
+function normalizeUiScale(value: number): number {
+  return UI_SCALE_OPTIONS.includes(value as (typeof UI_SCALE_OPTIONS)[number]) ? value : 100;
+}
+
+function getSavedUiScale(): number {
+  if (typeof window === "undefined") return 100;
+  return normalizeUiScale(Number(window.localStorage.getItem("app-ui-scale")));
+}
 
 function getErrorMessage(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -180,6 +192,7 @@ export default function App() {
     if (typeof window === "undefined") return "light";
     return window.localStorage.getItem("app-theme") === "dark" ? "dark" : "light";
   });
+  const [uiScale, setUiScale] = useState(() => isTauriRuntime() ? getSavedUiScale() : 100);
   const [account, setAccount] = useState<Account>({
     displayName: "Administración",
     email: "",
@@ -219,6 +232,30 @@ export default function App() {
     document.documentElement.classList.toggle("dark", theme === "dark");
     window.localStorage.setItem("app-theme", theme);
   }, [theme]);
+
+  const applyUiScale = useCallback(async (requestedScale: number) => {
+    if (!isTauriRuntime()) {
+      setUiScale(100);
+      return;
+    }
+
+    const nextScale = normalizeUiScale(requestedScale);
+    const webview = getCurrentWebview();
+
+    try {
+      await webview.setZoom(nextScale / 100);
+      window.localStorage.setItem("app-ui-scale", String(nextScale));
+      setUiScale(nextScale);
+    } catch {
+      await webview.setZoom(1).catch(() => {});
+      window.localStorage.setItem("app-ui-scale", "100");
+      setUiScale(100);
+    }
+  }, []);
+
+  useEffect(() => {
+    void applyUiScale(getSavedUiScale());
+  }, [applyUiScale]);
 
   useEffect(() => {
     return () => window.clearTimeout(titlebarToastTimer.current);
@@ -752,7 +789,7 @@ export default function App() {
   if (logoutLoading) {
     return (
       <div className="h-screen bg-background text-foreground overflow-hidden flex flex-col">
-        <AppTitleBar seamless theme={theme} toast={titlebarToast} onToggleTheme={toggleTheme} />
+        <AppTitleBar seamless theme={theme} uiScale={uiScale} showUiScaleControl={isTauriRuntime()} toast={titlebarToast} onToggleTheme={toggleTheme} onUiScaleChange={applyUiScale} />
         <div className="flex-1 min-h-0">
           <StatusScreen
             title="Cerrando sesión"
@@ -774,7 +811,7 @@ export default function App() {
             actionLabel="Reintentar"
             onAction={() => setIsOnline(isBrowserOnline())}
           />
-          <AppTitleBar compact floating theme={theme} toast={titlebarToast} onToggleTheme={toggleTheme} />
+          <AppTitleBar compact floating theme={theme} uiScale={uiScale} showUiScaleControl={isTauriRuntime()} toast={titlebarToast} onToggleTheme={toggleTheme} onUiScaleChange={applyUiScale} />
         </div>
       );
     }
@@ -786,7 +823,7 @@ export default function App() {
             title="Cargando información"
             message="Inicio de sesión correcto. Estamos descargando catálogos, solicitudes y métricas antes de abrir el panel."
           />
-          <AppTitleBar compact floating theme={theme} toast={titlebarToast} onToggleTheme={toggleTheme} />
+          <AppTitleBar compact floating theme={theme} uiScale={uiScale} showUiScaleControl={isTauriRuntime()} toast={titlebarToast} onToggleTheme={toggleTheme} onUiScaleChange={applyUiScale} />
         </div>
       );
     }
@@ -803,7 +840,7 @@ export default function App() {
           onResetPassword={handlePasswordRecoveryReset}
           onClearSavedCredentials={handleClearSavedLoginCredentials}
         />
-        <AppTitleBar compact floating theme={theme} toast={titlebarToast} onToggleTheme={toggleTheme} />
+        <AppTitleBar compact floating theme={theme} uiScale={uiScale} showUiScaleControl={isTauriRuntime()} toast={titlebarToast} onToggleTheme={toggleTheme} onUiScaleChange={applyUiScale} />
         {appError && (
           <div className="absolute left-1/2 bottom-5 -translate-x-1/2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 dark:border-red-500/20 dark:bg-red-950/20">
             {appError}
@@ -818,8 +855,11 @@ export default function App() {
       <AppTitleBar
         seamless
         theme={theme}
+        uiScale={uiScale}
+        showUiScaleControl={isTauriRuntime()}
         toast={titlebarToast}
         onToggleTheme={toggleTheme}
+        onUiScaleChange={applyUiScale}
         refreshAction={isOnline ? {
           label: titlebarRefreshLabel[dashboardTab],
           loading: titlebarRefreshing,
