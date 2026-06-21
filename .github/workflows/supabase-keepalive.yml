@@ -1,0 +1,57 @@
+name: Mantener activa la base de datos de Supabase
+
+on:
+  schedule:
+    # Se ejecuta cada día a las 17:13 UTC. El paso siguiente realiza la
+    # consulta únicamente en días alternos (aprox. 11:13 en Chihuahua).
+    - cron: "13 17 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  keepalive:
+    name: Consulta de mantenimiento
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ejecutar cada dos días
+        id: cadence
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if (( ($(date -u +%s) / 86400) % 2 == 0 )); then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Hoy no corresponde realizar la consulta."
+          fi
+
+      - name: Consultar catálogo público de Supabase
+        if: steps.cadence.outputs.run == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SUPABASE_URL:?Configura el secreto SUPABASE_URL en GitHub.}"
+          : "${SUPABASE_PUBLISHABLE_KEY:?Configura el secreto SUPABASE_PUBLISHABLE_KEY en GitHub.}"
+
+          curl --fail --silent --show-error \
+            --retry 3 \
+            --retry-all-errors \
+            --connect-timeout 15 \
+            --max-time 60 \
+            --output /dev/null \
+            --header "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+            --header "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}" \
+            --get "${SUPABASE_URL%/}/rest/v1/niveles_estudio" \
+            --data-urlencode "select=id" \
+            --data-urlencode "activo=eq.true" \
+            --data-urlencode "limit=1"
+
+          echo "Consulta de mantenimiento completada correctamente."
