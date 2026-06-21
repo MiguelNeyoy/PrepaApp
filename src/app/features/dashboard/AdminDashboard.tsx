@@ -139,6 +139,24 @@ function AboutModal({ onClose }: { onClose: () => void }) {
               <p>La configuración de escritorio está en src-tauri.</p>
               <p>La documentación de instalación, GitHub y Supabase está en docs.</p>
               <p>Los respaldos y scripts de base de datos están en supabase/sql.</p>
+              <p>
+                <span className="font-medium text-foreground">Accesos para la continuidad del proyecto.</span>{" "}
+                Para asegurar la continuidad operativa y administrativa del sistema, deberán solicitarse o entregarse las credenciales de acceso a{" "}
+                <a href="https://github.com" target="_blank" rel="noreferrer" className="font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-300">
+                  GitHub
+                </a>{" "}
+                y{" "}
+                <a href="https://supabase.com" target="_blank" rel="noreferrer" className="font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-300">
+                  Supabase
+                </a>{" "}
+                asociadas al proyecto.
+              </p>
+              <p>
+                Para acceder al proyecto en Supabase, primero deberá iniciarse sesión en la cuenta de GitHub vinculada.
+              </p>
+              <p>
+                La cuenta de GitHub fue vinculada al correo institucional titulacionzonasur@uas.edu.mx y contiene un fork del repositorio original, donde se configuró el proceso automático de mantenimiento (keepalive) de la base de datos.
+              </p>
             </div>
           </section>
         </div>
