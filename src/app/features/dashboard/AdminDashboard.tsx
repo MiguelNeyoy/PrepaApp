@@ -662,7 +662,7 @@ export function LoginScreen({
               Sistema de<br />Titulación
             </h1>
             <p className="text-sm text-white/40 leading-relaxed max-w-xs">
-              Gestión y seguimiento de trámites de titulación del personal administrativo.
+              Gestión y seguimiento de trámites de titulación.
             </p>
 
             <div className="mt-8 space-y-2">
