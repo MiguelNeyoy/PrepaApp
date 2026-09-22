@@ -6,16 +6,12 @@ import { Database, Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { AdminDashboard, AppTitleBar, LoginScreen } from "./features/dashboard/AdminDashboard";
 import type { TitlebarToast } from "./features/dashboard/AdminDashboard";
 import {
-  createCarrera,
-  createFacultad,
+  createPreparatoria,
   createAlumno as createAlumnoRecord,
   createManagedUser,
-  createNivel,
   createTramite,
   deleteManagedUser,
-  deleteCarrera,
-  deleteFacultad,
-  deleteNivel,
+  deletePreparatoria,
   deletePreviousCycle as deletePreviousCycleRecord,
   deleteAlumno as deleteAlumnoRecord,
   deleteTramite,
@@ -30,17 +26,15 @@ import {
   verifyPasswordRecoveryInput,
   signInAdmin,
   signOutAdmin,
-  updateCarrera,
-  updateFacultad,
+  updatePreparatoria,
   updateAlumno as updateAlumnoRecord,
   updateAlumnosBulk as updateAlumnosBulkRecord,
   updateCurrentAccount,
-  updateNivel,
   updateProfileRoleActive,
   updateTramite,
 } from "./services/supabase";
 import { isTauriRuntime, resizeDesktopWindow } from "./utils/window";
-import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CarreraCatalogo, CycleSummary, Facultad, ManagedProfile, ManagedRole, NivelCatalogo, ThemeMode, TramiteCatalogo } from "./domain";
+import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CycleSummary, ManagedProfile, ManagedRole, Preparatoria, ThemeMode, TramiteCatalogo } from "./domain";
 
 const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150] as const;
 
@@ -507,103 +501,35 @@ export default function App() {
     await refreshCoreData();
   }, [refreshCoreData]);
 
-  const handleCreateFacultad = useCallback(async (facultad: Facultad) => {
+  const handleCreatePreparatoria = useCallback(async (prepa: Preparatoria) => {
     try {
-      await createFacultad(facultad);
+      await createPreparatoria(prepa);
       await refreshCatalogos();
-      notifyDatabaseSuccess("Facultad guardada", `${facultad.codigo} - ${facultad.nombre}`);
+      notifyDatabaseSuccess("Preparatoria guardada", `${prepa.clave} - ${prepa.nombre}`);
     } catch (err) {
-      notifyDatabaseError(err, "No se pudo guardar la facultad.");
+      notifyDatabaseError(err, "No se pudo guardar la preparatoria.");
       throw err;
     }
   }, [refreshCatalogos]);
 
-  const handleUpdateFacultad = useCallback(async (facultad: Facultad) => {
+  const handleUpdatePreparatoria = useCallback(async (prepa: Preparatoria) => {
     try {
-      await updateFacultad(facultad);
+      await updatePreparatoria(prepa);
       await refreshCatalogos();
-      notifyDatabaseSuccess("Facultad actualizada", `${facultad.codigo} - ${facultad.nombre}`);
+      notifyDatabaseSuccess("Preparatoria actualizada", `${prepa.clave} - ${prepa.nombre}`);
     } catch (err) {
-      notifyDatabaseError(err, "No se pudo actualizar la facultad.");
+      notifyDatabaseError(err, "No se pudo actualizar la preparatoria.");
       throw err;
     }
   }, [refreshCatalogos]);
 
-  const handleDeleteFacultad = useCallback(async (facultad: Facultad) => {
+  const handleDeletePreparatoria = useCallback(async (prepa: Preparatoria) => {
     try {
-      await deleteFacultad(facultad.codigo);
+      await deletePreparatoria(prepa.clave);
       await refreshCatalogos();
-      notifyDatabaseSuccess("Facultad eliminada", `${facultad.codigo} - ${facultad.nombre}`);
+      notifyDatabaseSuccess("Preparatoria eliminada", `${prepa.clave} - ${prepa.nombre}`);
     } catch (err) {
-      const message = getCatalogDeleteErrorMessage(err, "la facultad");
-      notifyDatabaseError(new Error(message), message);
-      throw new Error(message);
-    }
-  }, [refreshCatalogos]);
-
-  const handleCreateCarrera = useCallback(async (carrera: Omit<CarreraCatalogo, "id">) => {
-    try {
-      await createCarrera(carrera);
-      await refreshCatalogos();
-      notifyDatabaseSuccess("Carrera guardada", carrera.nombre);
-    } catch (err) {
-      notifyDatabaseError(err, "No se pudo guardar la carrera.");
-      throw err;
-    }
-  }, [refreshCatalogos]);
-
-  const handleUpdateCarrera = useCallback(async (carrera: CarreraCatalogo) => {
-    try {
-      await updateCarrera(carrera);
-      await refreshCatalogos();
-      notifyDatabaseSuccess("Carrera actualizada", carrera.nombre);
-    } catch (err) {
-      notifyDatabaseError(err, "No se pudo actualizar la carrera.");
-      throw err;
-    }
-  }, [refreshCatalogos]);
-
-  const handleDeleteCarrera = useCallback(async (carrera: CarreraCatalogo) => {
-    try {
-      await deleteCarrera(carrera.id);
-      await refreshCatalogos();
-      notifyDatabaseSuccess("Carrera eliminada", carrera.nombre);
-    } catch (err) {
-      const message = getCatalogDeleteErrorMessage(err, "la carrera");
-      notifyDatabaseError(new Error(message), message);
-      throw new Error(message);
-    }
-  }, [refreshCatalogos]);
-
-  const handleCreateNivel = useCallback(async (nivel: NivelCatalogo) => {
-    try {
-      await createNivel(nivel);
-      await refreshCatalogos();
-      notifyDatabaseSuccess("Nivel guardado", nivel.nombre);
-    } catch (err) {
-      notifyDatabaseError(err, "No se pudo guardar el nivel.");
-      throw err;
-    }
-  }, [refreshCatalogos]);
-
-  const handleUpdateNivel = useCallback(async (nivel: NivelCatalogo) => {
-    try {
-      await updateNivel(nivel);
-      await refreshCatalogos();
-      notifyDatabaseSuccess("Nivel actualizado", nivel.nombre);
-    } catch (err) {
-      notifyDatabaseError(err, "No se pudo actualizar el nivel.");
-      throw err;
-    }
-  }, [refreshCatalogos]);
-
-  const handleDeleteNivel = useCallback(async (nivel: NivelCatalogo) => {
-    try {
-      await deleteNivel(nivel.id);
-      await refreshCatalogos();
-      notifyDatabaseSuccess("Nivel eliminado", nivel.nombre);
-    } catch (err) {
-      const message = getCatalogDeleteErrorMessage(err, "el nivel");
+      const message = getCatalogDeleteErrorMessage(err, "la preparatoria");
       notifyDatabaseError(new Error(message), message);
       throw new Error(message);
     }
@@ -879,15 +805,9 @@ export default function App() {
                 onBulkUpdate={updateAlumnosBulk}
                 onDelete={deleteAlumno}
                 onAdd={addAlumno}
-                onCreateFacultad={handleCreateFacultad}
-                onUpdateFacultad={handleUpdateFacultad}
-                onDeleteFacultad={handleDeleteFacultad}
-                onCreateCarrera={handleCreateCarrera}
-                onUpdateCarrera={handleUpdateCarrera}
-                onDeleteCarrera={handleDeleteCarrera}
-                onCreateNivel={handleCreateNivel}
-                onUpdateNivel={handleUpdateNivel}
-                onDeleteNivel={handleDeleteNivel}
+                onCreatePreparatoria={handleCreatePreparatoria}
+                onUpdatePreparatoria={handleUpdatePreparatoria}
+                onDeletePreparatoria={handleDeletePreparatoria}
                 onCreateTramite={handleCreateTramite}
                 onUpdateTramite={handleUpdateTramite}
                 onDeleteTramite={handleDeleteTramite}
