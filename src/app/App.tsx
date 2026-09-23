@@ -18,6 +18,7 @@ import {
   fetchAlumnos,
   fetchCatalogos,
   fetchCatalogosAdmin,
+  fetchCostoBase,
   fetchCycleSummaries,
   fetchProfiles,
   getCurrentAccount,
@@ -29,11 +30,13 @@ import {
   updatePreparatoria,
   updateAlumno as updateAlumnoRecord,
   updateAlumnosBulk as updateAlumnosBulkRecord,
+  updateCostoBase,
   updateCurrentAccount,
   updateProfileRoleActive,
   updateTramite,
 } from "./services/supabase";
 import { isTauriRuntime, resizeDesktopWindow } from "./utils/window";
+import { loadSavedCostoBase } from "./domain";
 import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CycleSummary, ManagedProfile, ManagedRole, Preparatoria, ThemeMode, TramiteCatalogo } from "./domain";
 
 const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150] as const;
@@ -197,6 +200,7 @@ export default function App() {
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
   const [profiles, setProfiles] = useState<ManagedProfile[]>([]);
   const [cycleSummaries, setCycleSummaries] = useState<CycleSummary[]>([]);
+  const [costoBase, setCostoBase] = useState<number>(() => loadSavedCostoBase());
   const [dashboardTab, setDashboardTab] = useState<AdminTab>("alumnos");
   const [titlebarRefreshing, setTitlebarRefreshing] = useState(false);
   const [titlebarToast, setTitlebarToast] = useState<TitlebarToast | null>(null);
@@ -297,13 +301,15 @@ export default function App() {
     setDataLoading(true);
     setAppError("");
     try {
-      const [nextCatalogos, nextCatalogosAdmin] = await Promise.all([
+      const [nextCatalogos, nextCatalogosAdmin, nextCostoBase] = await Promise.all([
         fetchCatalogos(),
         fetchCatalogosAdmin(),
+        fetchCostoBase(),
       ]);
       const nextAlumnos = await fetchAlumnos(nextCatalogos);
       setCatalogos(nextCatalogos);
       setCatalogosAdmin(nextCatalogosAdmin);
+      setCostoBase(nextCostoBase);
       setAlumnos(nextAlumnos);
       if (includeAdminData) {
         const [nextProfiles, nextCycleSummaries] = await Promise.all([
@@ -569,6 +575,17 @@ export default function App() {
     }
   }, [refreshCatalogos]);
 
+  const handleUpdateCostoBase = useCallback(async (nuevoCosto: number) => {
+    try {
+      await updateCostoBase(nuevoCosto);
+      setCostoBase(nuevoCosto);
+      notifyDatabaseSuccess("Costo base actualizado", `$${nuevoCosto}.00 MXN para nuevos certificados`);
+    } catch (err) {
+      notifyDatabaseError(err, "No se pudo actualizar el costo base.");
+      throw err;
+    }
+  }, [notifyDatabaseError, notifyDatabaseSuccess]);
+
   const handleCreateManagedUser = useCallback(async (input: { email: string; displayName: string; role: ManagedRole }) => {
     try {
       const created = await createManagedUser(input);
@@ -811,6 +828,8 @@ export default function App() {
                 onCreateTramite={handleCreateTramite}
                 onUpdateTramite={handleUpdateTramite}
                 onDeleteTramite={handleDeleteTramite}
+                costoBase={costoBase}
+                onUpdateCostoBase={handleUpdateCostoBase}
                 profiles={profiles}
                 cycleSummaries={cycleSummaries}
                 onCreateUser={handleCreateManagedUser}

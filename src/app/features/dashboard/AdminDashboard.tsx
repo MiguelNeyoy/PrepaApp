@@ -20,7 +20,7 @@ export type TitlebarToast = {
   variant: "success" | "error" | "info";
 };
 
-const ABOUT_REPO_URL = "https://github.com/Frankz1997/app-titulacion.git";
+const ABOUT_REPO_URL = "https://github.com/MiguelNeyoy/app-titulacion.git";
 const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150];
 
 function AboutModal({ onClose }: { onClose: () => void }) {
@@ -102,9 +102,9 @@ function AboutModal({ onClose }: { onClose: () => void }) {
 
         <div className="p-5 space-y-5">
           <section className="space-y-2">
-            <h3 className="text-sm font-bold text-foreground">APP Titulación</h3>
+            <h3 className="text-sm font-bold text-foreground">Prepa APP</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Aplicación administrativa para gestionar y dar seguimiento a trámites de titulación, catálogos, usuarios y métricas del proceso.
+              Aplicación administrativa para gestionar y dar seguimiento a trámites de certificados en preparatorias , catálogos, usuarios y métricas del proceso.
             </p>
           </section>
 
@@ -1044,6 +1044,8 @@ export function AdminDashboard({
   onCreateTramite,
   onUpdateTramite,
   onDeleteTramite,
+  costoBase,
+  onUpdateCostoBase,
   profiles,
   cycleSummaries,
   onCreateUser,
@@ -1070,6 +1072,8 @@ export function AdminDashboard({
   onCreateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onUpdateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onDeleteTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
+  costoBase?: number;
+  onUpdateCostoBase?: (nuevoCosto: number) => Promise<void> | void;
   profiles: ManagedProfile[];
   cycleSummaries: CycleSummary[];
   onCreateUser: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
@@ -1166,6 +1170,7 @@ export function AdminDashboard({
             <AlumnosTab
               alumnos={alumnos}
               catalogos={catalogos}
+              costoBase={costoBase}
               onUpdate={onUpdate}
               onBulkUpdate={onBulkUpdate}
               onDelete={onDelete}
@@ -1182,6 +1187,8 @@ export function AdminDashboard({
             <CatalogosTab
               catalogos={catalogosAdmin}
               canManage={isAdmin}
+              costoBase={costoBase}
+              onUpdateCostoBase={onUpdateCostoBase}
               onCreatePreparatoria={onCreatePreparatoria}
               onUpdatePreparatoria={onUpdatePreparatoria}
               onDeletePreparatoria={onDeletePreparatoria}
