@@ -1,6 +1,6 @@
-# APP Titulacion
+# APP Certificado
 
-Sistema para administrar solicitudes de titulacion, catalogos academicos, usuarios administrativos, metricas y exportaciones en Excel. El proyecto incluye una app React/Vite con empaquetado de escritorio mediante Tauri, respaldo SQL para Supabase y un formulario web PHP para consulta/captura por matricula.
+Sistema para administrar solicitudes de Certificados, catalogos academicos, usuarios administrativos, metricas y exportaciones en Excel. El proyecto incluye una app React/Vite con empaquetado de escritorio mediante Tauri, respaldo SQL para Supabase y un formulario web PHP para consulta/captura por matricula.
 
 ## Funcionalidades principales
 
@@ -10,7 +10,6 @@ Sistema para administrar solicitudes de titulacion, catalogos academicos, usuari
 - Metricas de productividad y mantenimiento de ciclos anteriores.
 - Exportacion a formatos institucionales `.xlsx`.
 - Funcion Edge `admin-create-user` para crear usuarios desde el panel.
-- Portal PHP en `FormularioWEB/` conectado al mismo proyecto Supabase.
 
 ## Stack
 
@@ -26,7 +25,6 @@ Sistema para administrar solicitudes de titulacion, catalogos academicos, usuari
 - pnpm 9 o superior.
 - Rust estable y dependencias de Tauri si se va a compilar escritorio.
 - Cuenta/proyecto Supabase configurado con los SQL de `supabase/sql/`.
-- PHP 8+ si se despliega `FormularioWEB/`.
 
 ## Configuracion rapida
 
@@ -96,4 +94,3 @@ El portal esta en `FormularioWEB/`. Puede leer las mismas variables desde el ent
 ## Seguridad
 
 Este repo esta preparado para ignorar `.env.local`, `keys`, builds y dependencias. Antes de hacerlo publico, revisa que no existan datos personales en archivos SQL, Excel o assets.
-
