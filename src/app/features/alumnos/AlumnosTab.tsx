@@ -21,6 +21,7 @@ import {
   CICLO_MESES,
   COSTO_BASE_CERTIFICADO,
   MESES,
+  MESES_ABR,
   MESES_SHORT,
   MODALIDADES,
   PREPARATORIAS,
@@ -89,7 +90,7 @@ function isValidNumeroCuenta(nc: string): boolean {
   return /^\d{8}$/.test(nc.trim());
 }
 
-function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos): Alumno {
+function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos, costoBase = COSTO_BASE_CERTIFICADO): Alumno {
   const prepas = catalogos?.preparatorias?.length ? catalogos.preparatorias : PREPARATORIAS;
   const defaultPrepa = prepas[0];
   const today = new Date();
@@ -106,7 +107,7 @@ function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos): Alumno {
     tipoCertificado: "Digital",
     tramite: "Certificado",
     tramiteId: "certificado",
-    pago: COSTO_BASE_CERTIFICADO,
+    pago: costoBase,
     email: "",
     telefono: "",
     telefonoAlt: "",
@@ -127,6 +128,25 @@ function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos): Alumno {
 }
 
 // -- Date field helper in modal -------------------------------------------------
+
+function toHtmlDateValue(displayDate: string): string {
+  if (!displayDate) return "";
+  const match = displayDate.match(/^(\d{1,2})\/([A-Za-zÁÉÍÓÚáéíóúÑñ]{3})\/(\d{4})$/);
+  if (!match) return "";
+  const day = match[1].padStart(2, "0");
+  const monthIdx = MESES_ABR.findIndex(m => m.toLowerCase() === match[2].toLowerCase()) + 1;
+  if (!monthIdx) return "";
+  const month = String(monthIdx).padStart(2, "0");
+  const year = match[3];
+  return `${year}-${month}-${day}`;
+}
+
+function fromHtmlDateValue(htmlDate: string): string {
+  if (!htmlDate) return "";
+  const [year, month, day] = htmlDate.split("-").map(Number);
+  if (!year || !month || !day) return "";
+  return fmtDate(day, month, year);
+}
 
 function DateField({
   label,
@@ -169,8 +189,25 @@ function DateField({
     setOpen(false);
   };
 
+  const setYesterday = () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    onChange(fmtDate(yesterday.getDate(), yesterday.getMonth() + 1, yesterday.getFullYear()));
+    setOpen(false);
+  };
+
   const clear = () => {
     onChange("");
+    setOpen(false);
+  };
+
+  const handleCustomDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (!val) {
+      onChange("");
+    } else {
+      onChange(fromHtmlDateValue(val));
+    }
     setOpen(false);
   };
 
@@ -184,9 +221,9 @@ function DateField({
           ref={triggerRef}
           type="button"
           onClick={() => setOpen(!open)}
-          className="w-full bg-secondary/60 border border-border rounded-lg px-3 py-2 text-xs text-foreground flex items-center justify-between hover:bg-secondary/80 focus:outline-none focus:ring-2 focus:ring-amber-400/25 transition-all text-left"
+          className="w-full bg-secondary/60 border border-border rounded-lg px-3 py-2 text-xs text-foreground flex items-center justify-between hover:bg-secondary/80 focus:outline-none focus:ring-2 focus:ring-amber-400/25 transition-all text-left cursor-pointer"
         >
-          <span className={value ? "text-foreground font-mono" : "text-muted-foreground/40"}>
+          <span className={value ? "text-foreground font-mono font-medium" : "text-muted-foreground/40"}>
             {value || "dd/mes/aaaa"}
           </span>
           <Calendar className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 ml-2" />
@@ -197,21 +234,44 @@ function DateField({
             <div
               ref={dropdownRef}
               style={{ position: "fixed", top: pos.top, left: pos.left }}
-              className="z-[9999] bg-card border border-border rounded-xl shadow-xl p-2 flex flex-col gap-1 min-w-[140px] text-xs app-dropdown-in"
+              className="z-[9999] bg-card border border-border rounded-xl shadow-2xl p-3 flex flex-col gap-2 min-w-[210px] text-xs app-dropdown-in"
             >
-              <button
-                type="button"
-                onClick={setToday}
-                className="px-3 py-1.5 rounded-lg text-left hover:bg-secondary text-foreground flex items-center gap-2 font-medium"
-              >
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                Hoy
-              </button>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={setToday}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1.5 font-bold transition-colors cursor-pointer"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Hoy
+                </button>
+                <button
+                  type="button"
+                  onClick={setYesterday}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1.5 font-bold transition-colors cursor-pointer"
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  Ayer
+                </button>
+              </div>
+
+              <div className="border-t border-border/60 pt-2 space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
+                  Elegir en calendario
+                </span>
+                <input
+                  type="date"
+                  value={toHtmlDateValue(value)}
+                  onChange={handleCustomDateChange}
+                  className="w-full bg-secondary/80 border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/25 cursor-pointer"
+                />
+              </div>
+
               {value && (
                 <button
                   type="button"
                   onClick={clear}
-                  className="px-3 py-1.5 rounded-lg text-left hover:bg-secondary text-red-400 flex items-center gap-2 font-medium border-t border-border/50"
+                  className="px-2.5 py-1.5 rounded-lg text-left hover:bg-red-500/10 text-red-500 flex items-center gap-2 font-medium border-t border-border/50 transition-colors cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                   Limpiar fecha
@@ -232,6 +292,7 @@ function EditModal({
   mes,
   anio,
   catalogos,
+  costoBase = COSTO_BASE_CERTIFICADO,
   onSave,
   onClose,
 }: {
@@ -239,6 +300,7 @@ function EditModal({
   mes: number;
   anio: number;
   catalogos?: Catalogos;
+  costoBase?: number;
   onSave: (a: Alumno) => Promise<void> | void;
   onClose: () => void;
 }) {
@@ -247,7 +309,7 @@ function EditModal({
     [catalogos]
   );
 
-  const [form, setForm] = useState<Alumno>(alumno ?? emptyAlumno(mes, anio, catalogos));
+  const [form, setForm] = useState<Alumno>(alumno ?? emptyAlumno(mes, anio, catalogos, costoBase));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -557,13 +619,16 @@ function EditModal({
 
             <div className="grid grid-cols-3 gap-4 mt-3">
               <div>
-                <label className={labelCls}>Carta Poder / Trámite</label>
+                <label className={labelCls}>Folio Carta Poder (Opcional)</label>
                 <input
                   className={fieldCls}
                   value={form.cartaPoder}
                   onChange={e => set("cartaPoder", e.target.value)}
-                  placeholder="CP-3041"
+                  placeholder="Ej. CP-102 (solo si viene apoderado)"
                 />
+                <p className="text-[10px] text-muted-foreground/70 mt-1">
+                  Dejar vacío si el alumno acude en persona.
+                </p>
               </div>
               <div>
                 <label className={labelCls}>Localización Física</label>
@@ -645,6 +710,7 @@ function EditModal({
 export function AlumnosTab({
   alumnos,
   catalogos,
+  costoBase,
   onUpdate,
   onBulkUpdate,
   onDelete,
@@ -653,6 +719,7 @@ export function AlumnosTab({
 }: {
   alumnos: Alumno[];
   catalogos?: Catalogos;
+  costoBase?: number;
   onUpdate: (a: Alumno) => Promise<void> | void;
   onBulkUpdate: (ids: string[], changes: AlumnoBulkChanges) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
@@ -767,6 +834,7 @@ export function AlumnosTab({
           mes={selectedMes}
           anio={selectedMonthYear}
           catalogos={catalogos}
+          costoBase={costoBase}
           onSave={handleSave}
           onClose={closeModal}
         />
