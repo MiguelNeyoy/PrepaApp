@@ -110,7 +110,21 @@ export interface Catalogos {
 
 // -- Constants ------------------------------------------------------------------
 
-export const COSTO_BASE_CERTIFICADO = 500;
+export const COSTO_BASE_CERTIFICADO_DEFAULT = 500;
+export const COSTO_BASE_CERTIFICADO = COSTO_BASE_CERTIFICADO_DEFAULT;
+
+export function loadSavedCostoBase(): number {
+  if (typeof window === "undefined") return COSTO_BASE_CERTIFICADO_DEFAULT;
+  const raw = window.localStorage.getItem("app_costo_base_certificado");
+  const val = raw ? Number(raw) : NaN;
+  return !isNaN(val) && val > 0 ? val : COSTO_BASE_CERTIFICADO_DEFAULT;
+}
+
+export function saveCostoBaseToLocal(costo: number): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem("app_costo_base_certificado", String(costo));
+  }
+}
 
 export const MODALIDADES: ModalidadPrepa[] = [
   "Escolarizada",

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { MESES_ABR, PREPARATORIAS, fmtDate, getCicloEscolarAnioFin, getCicloEscolarAnioFinFromPeriodo, getCicloEscolarLabel } from "../domain";
+import { MESES_ABR, PREPARATORIAS, COSTO_BASE_CERTIFICADO_DEFAULT, fmtDate, getCicloEscolarAnioFin, getCicloEscolarAnioFinFromPeriodo, getCicloEscolarLabel, loadSavedCostoBase, saveCostoBaseToLocal } from "../domain";
 import type {
   Account,
   Alumno,
@@ -434,6 +434,39 @@ export async function fetchCatalogosAdmin(): Promise<Catalogos> {
   );
 
   return { preparatorias: prepas.length > 0 ? prepas : loadLocalPreparatorias(), tramites };
+}
+
+export async function fetchCostoBase(): Promise<number> {
+  if (isMockMode) {
+    return loadSavedCostoBase();
+  }
+  try {
+    const { data, error } = await supabase
+      .from("configuraciones")
+      .select("valor")
+      .eq("clave", "costo_base_certificado")
+      .maybeSingle();
+
+    if (error || !data) {
+      return loadSavedCostoBase();
+    }
+    const num = Number(data.valor);
+    return !isNaN(num) && num > 0 ? num : loadSavedCostoBase();
+  } catch {
+    return loadSavedCostoBase();
+  }
+}
+
+export async function updateCostoBase(nuevoCosto: number): Promise<void> {
+  saveCostoBaseToLocal(nuevoCosto);
+  if (isMockMode) return;
+  try {
+    await supabase
+      .from("configuraciones")
+      .upsert({ clave: "costo_base_certificado", valor: String(nuevoCosto) });
+  } catch (err) {
+    console.warn("No se pudo sincronizar el costo base con Supabase:", err);
+  }
 }
 
 // --------------------------------------------------------------------------------
