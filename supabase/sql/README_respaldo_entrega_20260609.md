@@ -3,7 +3,7 @@
 > [!NOTE]
 > Este archivo corresponde al respaldo de la versión anterior universitaria (Titulación/Carreras).
 > Para el nuevo **Sistema de Certificados de Preparatoria (Sector Sur)**, consulta la documentación actualizada en:
-> 👉 **[supabase/sql/README.md](README.md)** y ejecuta **[preparatorias_sector_sur_init.sql](preparatorias_sector_sur_init.sql)**.
+> **[supabase/sql/README.md](README.md)** y ejecuta **[preparatorias_sector_sur_init.sql](preparatorias_sector_sur_init.sql)**.
 
 ---
 
