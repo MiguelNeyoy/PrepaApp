@@ -16,8 +16,9 @@ import type {
   Turno,
 } from "../domain";
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? "";
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
+const rawSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+const supabaseUrl = rawSupabaseUrl.replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
+const supabaseKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
 
 const forceMock =
   import.meta.env.VITE_USE_MOCK === "true" ||
