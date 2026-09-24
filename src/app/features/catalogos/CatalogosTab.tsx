@@ -1,89 +1,64 @@
-﻿import { useId, useMemo, useState } from "react";
-import type { ElementType, ReactNode } from "react";
-import { BookOpen, Building2, Check, CircleHelp, ClipboardList, Edit3, Layers3, Plus, Search, Trash2, X } from "lucide-react";
-import { CustomSelect } from "../../components/controls";
+import { useMemo, useState } from "react";
+import type { ElementType } from "react";
+import { Building2, Check, ClipboardList, DollarSign, Edit2, Edit3, Plus, Search, Trash2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
-import type { Catalogos, CarreraCatalogo, Facultad, NivelCatalogo, TramiteCatalogo } from "../../domain";
+import { COSTO_BASE_CERTIFICADO, MODALIDADES } from "../../domain";
+import type { Catalogos, ModalidadPrepa, Preparatoria, TramiteCatalogo } from "../../domain";
 
-type CatalogTab = "facultades" | "carreras" | "niveles" | "tramites";
+type CatalogTab = "preparatorias" | "tramites";
 type StatusFilter = "todos" | "activos" | "inactivos";
 type PanelMode = "create" | "edit";
 
 type PanelState =
-  | { tab: "facultades"; mode: PanelMode; value: Facultad }
-  | { tab: "carreras"; mode: PanelMode; value: CarreraCatalogo | Omit<CarreraCatalogo, "id"> }
-  | { tab: "niveles"; mode: PanelMode; value: NivelCatalogo }
+  | { tab: "preparatorias"; mode: PanelMode; value: Preparatoria }
   | { tab: "tramites"; mode: PanelMode; value: TramiteCatalogo };
 
 export function CatalogosTab({
   catalogos,
   canManage,
-  onCreateFacultad,
-  onUpdateFacultad,
-  onDeleteFacultad,
-  onCreateCarrera,
-  onUpdateCarrera,
-  onDeleteCarrera,
-  onCreateNivel,
-  onUpdateNivel,
-  onDeleteNivel,
+  costoBase = COSTO_BASE_CERTIFICADO,
+  onUpdateCostoBase,
+  onCreatePreparatoria,
+  onUpdatePreparatoria,
+  onDeletePreparatoria,
   onCreateTramite,
   onUpdateTramite,
   onDeleteTramite,
 }: {
   catalogos?: Catalogos;
   canManage: boolean;
-  onCreateFacultad: (facultad: Facultad) => Promise<void> | void;
-  onUpdateFacultad: (facultad: Facultad) => Promise<void> | void;
-  onDeleteFacultad: (facultad: Facultad) => Promise<void> | void;
-  onCreateCarrera: (carrera: Omit<CarreraCatalogo, "id">) => Promise<void> | void;
-  onUpdateCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
-  onDeleteCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
-  onCreateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
-  onUpdateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
-  onDeleteNivel: (nivel: NivelCatalogo) => Promise<void> | void;
+  costoBase?: number;
+  onUpdateCostoBase?: (nuevoCosto: number) => Promise<void> | void;
+  onCreatePreparatoria: (prepa: Preparatoria) => Promise<void> | void;
+  onUpdatePreparatoria: (prepa: Preparatoria) => Promise<void> | void;
+  onDeletePreparatoria: (prepa: Preparatoria) => Promise<void> | void;
   onCreateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onUpdateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onDeleteTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
 }) {
-  const [tab, setTab] = useState<CatalogTab>("facultades");
+  const [tab, setTab] = useState<CatalogTab>("preparatorias");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("todos");
   const [panel, setPanel] = useState<PanelState | null>(null);
+  const [editCostoModalOpen, setEditCostoModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const data = catalogos ?? { niveles: [], facultades: [], carreras: [], tramites: [] };
+  const data = catalogos ?? { preparatorias: [], tramites: [] };
   const normalizedQuery = normalize(query);
 
   const filtered = useMemo(() => {
     const matchesStatus = (activo?: boolean) =>
       status === "todos" || (status === "activos" ? activo !== false : activo === false);
 
-    if (tab === "facultades") {
-      return data.facultades.filter(item =>
+    if (tab === "preparatorias") {
+      return (data.preparatorias || []).filter(item =>
         matchesStatus(item.activo) &&
-        normalize(`${item.codigo} ${item.nombre}`).includes(normalizedQuery)
+        normalize(`${item.clave} ${item.nombre} ${(item.modalidades || []).join(" ")}`).includes(normalizedQuery)
       );
     }
 
-    if (tab === "carreras") {
-      return data.carreras.filter(item => {
-        const facultad = data.facultades.find(f => f.codigo === item.facultadCodigo);
-        const nivel = data.niveles.find(n => n.id === item.nivelId);
-        return matchesStatus(item.activo) &&
-          normalize(`${item.nombre} ${item.facultadCodigo} ${facultad?.nombre ?? ""} ${nivel?.nombre ?? ""}`).includes(normalizedQuery);
-      });
-    }
-
-    if (tab === "niveles") {
-      return data.niveles.filter(item =>
-        matchesStatus(item.activo) &&
-        normalize(`${item.id} ${item.nombre} ${item.abreviatura}`).includes(normalizedQuery)
-      );
-    }
-
-    return data.tramites.filter(item =>
+    return (data.tramites || []).filter(item =>
       matchesStatus(item.activo) &&
       normalize(`${item.id} ${item.nombre}`).includes(normalizedQuery)
     );
@@ -91,25 +66,11 @@ export function CatalogosTab({
 
   const openCreate = () => {
     setError("");
-    if (tab === "facultades") {
-      setPanel({ tab, mode: "create", value: { codigo: "", nombre: "", carreras: [], activo: true } });
-    } else if (tab === "carreras") {
+    if (tab === "preparatorias") {
       setPanel({
         tab,
         mode: "create",
-        value: {
-          facultadCodigo: data.facultades.find(f => f.activo !== false)?.codigo ?? "",
-          nivelId: data.niveles.find(n => n.activo)?.id ?? "",
-          nombre: "",
-          activo: true,
-        },
-      });
-    } else if (tab === "niveles") {
-      const nextOrden = Math.max(0, ...data.niveles.map(n => n.orden)) + 10;
-      setPanel({
-        tab,
-        mode: "create",
-        value: { id: "", nombre: "", abreviatura: "", pago: 0, colorHex: "#3b82f6", orden: nextOrden, activo: true },
+        value: { clave: "", nombre: "", modalidades: ["Escolarizada"], activo: true },
       });
     } else {
       setPanel({ tab, mode: "create", value: { id: "", nombre: "", activo: true } });
@@ -132,18 +93,10 @@ export function CatalogosTab({
     setSaving(true);
     setError("");
     try {
-      if (panel.tab === "facultades") {
+      if (panel.tab === "preparatorias") {
         panel.mode === "create"
-          ? await onCreateFacultad(nextValue as Facultad)
-          : await onUpdateFacultad(nextValue as Facultad);
-      } else if (panel.tab === "carreras") {
-        panel.mode === "create"
-          ? await onCreateCarrera(nextValue as Omit<CarreraCatalogo, "id">)
-          : await onUpdateCarrera(nextValue as CarreraCatalogo);
-      } else if (panel.tab === "niveles") {
-        panel.mode === "create"
-          ? await onCreateNivel(nextValue as NivelCatalogo)
-          : await onUpdateNivel(nextValue as NivelCatalogo);
+          ? await onCreatePreparatoria(nextValue as Preparatoria)
+          : await onUpdatePreparatoria(nextValue as Preparatoria);
       } else {
         panel.mode === "create"
           ? await onCreateTramite(nextValue as TramiteCatalogo)
@@ -151,83 +104,102 @@ export function CatalogosTab({
       }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar el catálogo.");
+      setError(err instanceof Error ? err.message : "Error guardando el registro.");
       return false;
     } finally {
       setSaving(false);
     }
   };
 
-  const deletePanel = async (nextValue: PanelState["value"]) => {
-    if (!panel || panel.mode !== "edit") return false;
-
-    setSaving(true);
+  const deletePanel = async (target: PanelState["value"]) => {
+    if (!panel) return false;
     setError("");
     try {
-      if (panel.tab === "facultades") {
-        await onDeleteFacultad(nextValue as Facultad);
-      } else if (panel.tab === "carreras") {
-        await onDeleteCarrera(nextValue as CarreraCatalogo);
-      } else if (panel.tab === "niveles") {
-        await onDeleteNivel(nextValue as NivelCatalogo);
+      if (panel.tab === "preparatorias") {
+        await onDeletePreparatoria(target as Preparatoria);
       } else {
-        await onDeleteTramite(nextValue as TramiteCatalogo);
+        await onDeleteTramite(target as TramiteCatalogo);
       }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo eliminar el catálogo.");
+      setError(err instanceof Error ? err.message : "No se pudo eliminar el registro.");
       return false;
-    } finally {
-      setSaving(false);
     }
   };
 
   const tabs: { id: CatalogTab; label: string; icon: ElementType; count: number }[] = [
-    { id: "facultades", label: "Facultades", icon: Building2, count: data.facultades.length },
-    { id: "carreras", label: "Carreras", icon: BookOpen, count: data.carreras.length },
-    { id: "niveles", label: "Niveles", icon: Layers3, count: data.niveles.length },
-    { id: "tramites", label: "Trámites", icon: ClipboardList, count: data.tramites.length },
+    { id: "preparatorias", label: "Preparatorias (Sector Sur)", icon: Building2, count: (data.preparatorias || []).length },
+    { id: "tramites", label: "Trámites", icon: ClipboardList, count: (data.tramites || []).length },
   ];
 
   return (
-    <div className="h-full min-h-0 flex flex-col gap-4">
+    <div className="flex flex-col h-full gap-4 min-h-0">
       {panel && (
-        <CatalogPanel
+        <SidePanel
           panel={panel}
           catalogos={data}
-          error={error}
           saving={saving}
+          error={error}
           canManage={canManage}
           onClose={() => setPanel(null)}
           onChange={value => {
             setError("");
-            setPanel(prev => prev ? ({ ...prev, value } as PanelState) : prev);
+            setPanel(prev => (prev ? ({ ...prev, value } as PanelState) : prev));
           }}
           onSubmit={submitPanel}
           onDelete={deletePanel}
         />
       )}
 
-      <div className="flex items-center justify-between gap-3">
+      {editCostoModalOpen && onUpdateCostoBase && (
+        <EditCostoBaseModal
+          currentCosto={costoBase}
+          onClose={() => setEditCostoModalOpen(false)}
+          onSave={onUpdateCostoBase}
+        />
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-shrink-0">
         <div>
-          <h2 className="text-lg font-bold text-foreground tracking-tight">Catálogos</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Administración de facultades, carreras, niveles y trámites</p>
+          <h2 className="text-lg font-bold text-foreground tracking-tight">Catálogos de Preparatoria</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Gestión de unidades académicas del Sector Sur, modalidades educativas y trámites
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-xs text-emerald-600 dark:text-emerald-400">
+            <DollarSign className="w-3.5 h-3.5" />
+            <span className="font-semibold">Costo Base Certificado:</span>
+            <span className="font-mono font-bold">${costoBase}.00 MXN</span>
+            {canManage && onUpdateCostoBase && (
+              <button
+                type="button"
+                onClick={() => setEditCostoModalOpen(true)}
+                title="Cambiar costo base para nuevos certificados"
+                className="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-300 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-2.5 h-2.5" />
+                Cambiar
+              </button>
+            )}
+          </div>
+
           {canManage && (
             <button
               type="button"
               onClick={openCreate}
-              className="h-9 px-4 rounded-lg bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-2 transition-colors"
+              className="h-9 px-4 rounded-lg bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold flex items-center gap-2 transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
-              Nuevo
+              Nueva Preparatoria
             </button>
           )}
         </div>
       </div>
 
-      <div className="flex gap-1 bg-secondary/20 border border-border rounded-xl p-1">
+      {/* Tab bar */}
+      <div className="flex gap-1 bg-secondary/20 border border-border rounded-xl p-1 flex-shrink-0">
         {tabs.map(item => (
           <button
             key={item.id}
@@ -239,59 +211,63 @@ export function CatalogosTab({
             }}
             className={`flex-1 h-9 rounded-lg px-3 text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
               tab === item.id
-                ? "bg-amber-400 text-background shadow-sm"
+                ? "bg-amber-400 text-slate-900 shadow-sm font-bold"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
             <item.icon className="w-3.5 h-3.5" />
             {item.label}
-            <span className="font-mono text-[10px] opacity-70">{item.count}</span>
+            <span className="font-mono text-[10px] px-1.5 py-0.2 bg-black/10 dark:bg-white/10 rounded-full">
+              {item.count}
+            </span>
           </button>
         ))}
       </div>
 
       {!canManage && (
-        <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
-          No tienes permisos para administrar catálogos. Puedes consultarlos, pero solo un administrador puede guardar cambios.
+        <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200 flex-shrink-0">
+          No tienes permisos de administrador. Puedes consultar los catálogos, pero solo un administrador puede guardar cambios.
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      {/* Search and filter toolbar */}
+      <div className="flex items-center gap-2 flex-shrink-0">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Buscar..."
+            placeholder="Buscar por clave, nombre o modalidad..."
             className="w-full h-9 bg-secondary/50 border border-border rounded-lg pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/40 transition-all"
           />
         </div>
-        <CustomSelect
-          size="sm"
+        <select
           value={status}
-          onChange={value => setStatus(value as StatusFilter)}
-          options={[
-            { label: "Todos", value: "todos" },
-            { label: "Activos", value: "activos" },
-            { label: "Inactivos", value: "inactivos" },
-          ]}
-          className="w-36"
-        />
+          onChange={e => setStatus(e.target.value as StatusFilter)}
+          className="h-9 px-3 bg-secondary/50 border border-border rounded-lg text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
+        >
+          <option value="todos">Todos los estados</option>
+          <option value="activos">Solo activos</option>
+          <option value="inactivos">Solo inactivos</option>
+        </select>
       </div>
 
-      <div className="flex-1 min-h-0 border border-border rounded-xl overflow-hidden bg-card">
+      {/* Data Table */}
+      <div className="flex-1 min-h-0 border border-border rounded-xl overflow-hidden bg-card shadow-sm">
         <div className="h-full overflow-auto">
-          {tab === "facultades" && (
-            <FacultadesTable rows={filtered as Facultad[]} canManage={canManage} onEdit={openEdit} />
-          )}
-          {tab === "carreras" && (
-            <CarrerasTable rows={filtered as CarreraCatalogo[]} catalogos={data} canManage={canManage} onEdit={openEdit} />
-          )}
-          {tab === "niveles" && (
-            <NivelesTable rows={filtered as NivelCatalogo[]} canManage={canManage} onEdit={openEdit} />
+          {tab === "preparatorias" && (
+            <PreparatoriasTable
+              rows={filtered as Preparatoria[]}
+              canManage={canManage}
+              onEdit={openEdit}
+            />
           )}
           {tab === "tramites" && (
-            <TramitesTable rows={filtered as TramiteCatalogo[]} canManage={canManage} onEdit={openEdit} />
+            <TramitesTable
+              rows={filtered as TramiteCatalogo[]}
+              canManage={canManage}
+              onEdit={openEdit}
+            />
           )}
         </div>
       </div>
@@ -299,25 +275,57 @@ export function CatalogosTab({
   );
 }
 
-function FacultadesTable({ rows, canManage, onEdit }: {
-  rows: Facultad[];
+// --------------------------------------------------------------------------------
+// Sub-Tables
+// --------------------------------------------------------------------------------
+
+function PreparatoriasTable({
+  rows,
+  canManage,
+  onEdit,
+}: {
+  rows: Preparatoria[];
   canManage: boolean;
-  onEdit: (value: Facultad) => void;
+  onEdit: (value: Preparatoria) => void;
 }) {
   return (
-    <CatalogTable headers={["Código", "Facultad", "Carreras", "Estado", ""]}>
+    <CatalogTable headers={["Clave", "Unidad Académica (Preparatoria)", "Programas / Modalidades", "Estado", ""]}>
       {rows.map(row => (
         <tr
-          key={row.codigo}
+          key={row.clave}
           tabIndex={0}
           onClick={() => onEdit(row)}
-          onKeyDown={event => handleRowKey(event, () => onEdit(row))}
+          onKeyDown={e => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onEdit(row);
+            }
+          }}
           className="border-b border-border/60 hover:bg-secondary/30 focus:bg-secondary/30 focus:outline-none cursor-pointer transition-colors"
         >
-          <Cell mono>{row.codigo}</Cell>
+          <Cell mono className="font-bold text-amber-500">{row.clave}</Cell>
           <Cell strong>{row.nombre}</Cell>
-          <Cell>{row.carreras.length}</Cell>
-          <Cell><StatusBadge active={row.activo !== false} /></Cell>
+          <Cell>
+            <div className="flex flex-wrap gap-1">
+              {(row.modalidades || []).map(m => (
+                <span
+                  key={m}
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                    m === "Escolarizada"
+                      ? "bg-blue-500/10 border-blue-500/20 text-blue-500"
+                      : m === "Semiescolarizada"
+                      ? "bg-purple-500/10 border-purple-500/20 text-purple-500"
+                      : "bg-orange-500/10 border-orange-500/20 text-orange-500"
+                  }`}
+                >
+                  {m}
+                </span>
+              ))}
+            </div>
+          </Cell>
+          <Cell>
+            <StatusBadge active={row.activo !== false} />
+          </Cell>
           <ActionCell canManage={canManage} onClick={() => onEdit(row)} />
         </tr>
       ))}
@@ -326,92 +334,35 @@ function FacultadesTable({ rows, canManage, onEdit }: {
   );
 }
 
-function CarrerasTable({ rows, catalogos, canManage, onEdit }: {
-  rows: CarreraCatalogo[];
-  catalogos: Catalogos;
-  canManage: boolean;
-  onEdit: (value: CarreraCatalogo) => void;
-}) {
-  return (
-    <CatalogTable headers={["Carrera", "Facultad", "Nivel", "Estado", ""]}>
-      {rows.map(row => {
-        const facultad = catalogos.facultades.find(f => f.codigo === row.facultadCodigo);
-        const nivel = catalogos.niveles.find(n => n.id === row.nivelId);
-        return (
-          <tr
-            key={row.id}
-            tabIndex={0}
-            onClick={() => onEdit(row)}
-            onKeyDown={event => handleRowKey(event, () => onEdit(row))}
-            className="border-b border-border/60 hover:bg-secondary/30 focus:bg-secondary/30 focus:outline-none cursor-pointer transition-colors"
-          >
-            <Cell strong>{row.nombre}</Cell>
-            <Cell>{facultad ? `${facultad.codigo} - ${facultad.nombre}` : row.facultadCodigo}</Cell>
-            <Cell>{nivel?.nombre ?? row.nivelId}</Cell>
-            <Cell><StatusBadge active={row.activo} /></Cell>
-            <ActionCell canManage={canManage} onClick={() => onEdit(row)} />
-          </tr>
-        );
-      })}
-      {rows.length === 0 && <EmptyRow colSpan={5} />}
-    </CatalogTable>
-  );
-}
-
-function NivelesTable({ rows, canManage, onEdit }: {
-  rows: NivelCatalogo[];
-  canManage: boolean;
-  onEdit: (value: NivelCatalogo) => void;
-}) {
-  return (
-    <CatalogTable headers={["Orden", "Nivel", "Pago", "Color", "Estado", ""]}>
-      {rows.map(row => (
-        <tr
-          key={row.id}
-          tabIndex={0}
-          onClick={() => onEdit(row)}
-          onKeyDown={event => handleRowKey(event, () => onEdit(row))}
-          className="border-b border-border/60 hover:bg-secondary/30 focus:bg-secondary/30 focus:outline-none cursor-pointer transition-colors"
-        >
-          <Cell mono>{row.orden}</Cell>
-          <Cell>
-            <div className="font-semibold text-foreground">{row.nombre}</div>
-            <div className="text-[10px] text-muted-foreground">{row.id} - {row.abreviatura}</div>
-          </Cell>
-          <Cell mono>${row.pago.toLocaleString("es-MX")}</Cell>
-          <Cell>
-            <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="w-4 h-4 rounded border border-border" style={{ backgroundColor: row.colorHex }} />
-              {row.colorHex}
-            </span>
-          </Cell>
-          <Cell><StatusBadge active={row.activo} /></Cell>
-          <ActionCell canManage={canManage} onClick={() => onEdit(row)} />
-        </tr>
-      ))}
-      {rows.length === 0 && <EmptyRow colSpan={6} />}
-    </CatalogTable>
-  );
-}
-
-function TramitesTable({ rows, canManage, onEdit }: {
+function TramitesTable({
+  rows,
+  canManage,
+  onEdit,
+}: {
   rows: TramiteCatalogo[];
   canManage: boolean;
   onEdit: (value: TramiteCatalogo) => void;
 }) {
   return (
-    <CatalogTable headers={["ID", "Trámite", "Estado", ""]}>
+    <CatalogTable headers={["Identificador", "Nombre del Trámite", "Estado", ""]}>
       {rows.map(row => (
         <tr
           key={row.id}
           tabIndex={0}
           onClick={() => onEdit(row)}
-          onKeyDown={event => handleRowKey(event, () => onEdit(row))}
+          onKeyDown={e => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onEdit(row);
+            }
+          }}
           className="border-b border-border/60 hover:bg-secondary/30 focus:bg-secondary/30 focus:outline-none cursor-pointer transition-colors"
         >
           <Cell mono>{row.id}</Cell>
           <Cell strong>{row.nombre}</Cell>
-          <Cell><StatusBadge active={row.activo} /></Cell>
+          <Cell>
+            <StatusBadge active={row.activo !== false} />
+          </Cell>
           <ActionCell canManage={canManage} onClick={() => onEdit(row)} />
         </tr>
       ))}
@@ -420,12 +371,15 @@ function TramitesTable({ rows, canManage, onEdit }: {
   );
 }
 
-function CatalogPanel({
+// --------------------------------------------------------------------------------
+// SidePanel Form Drawer
+// --------------------------------------------------------------------------------
+
+function SidePanel({
   panel,
-  catalogos,
-  canManage,
   saving,
   error,
+  canManage,
   onClose,
   onChange,
   onSubmit,
@@ -433,28 +387,36 @@ function CatalogPanel({
 }: {
   panel: PanelState;
   catalogos: Catalogos;
-  canManage: boolean;
   saving: boolean;
   error: string;
+  canManage: boolean;
   onClose: () => void;
   onChange: (value: PanelState["value"]) => void;
-  onSubmit: (value: PanelState["value"]) => Promise<boolean> | boolean;
-  onDelete: (value: PanelState["value"]) => Promise<boolean> | boolean;
+  onSubmit: (value: PanelState["value"]) => Promise<boolean>;
+  onDelete: (value: PanelState["value"]) => Promise<boolean>;
 }) {
-  const title = `${panel.mode === "create" ? "Nuevo" : "Editar"} ${tabSingular(panel.tab)}`;
-  const value = panel.value;
   const [closing, setClosing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const update = (patch: Record<string, unknown>) => onChange({ ...value, ...patch } as PanelState["value"]);
-  const toggleActive = () => update({ activo: !(value as { activo: boolean }).activo });
+  const value = panel.value;
+  const isPrepa = panel.tab === "preparatorias";
+  const title = panel.mode === "create"
+    ? isPrepa ? "Nueva Preparatoria" : "Nuevo Trámite"
+    : isPrepa ? "Editar Preparatoria" : "Editar Trámite";
+
+  const update = (patch: Record<string, unknown>) =>
+    onChange({ ...value, ...patch } as PanelState["value"]);
+
+  const toggleActive = () =>
+    update({ activo: !(value as { activo?: boolean }).activo });
+
   const requestClose = () => {
     if (closing || deleting) return;
     setClosing(true);
     window.setTimeout(onClose, 150);
   };
-  const confirmDeleteText = getCatalogDisplayName(panel.tab, value);
+
   const handleDelete = async () => {
     setDeleting(true);
     const deleted = await onDelete(value);
@@ -464,123 +426,154 @@ function CatalogPanel({
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex justify-end ${closing ? "app-overlay-out" : "app-overlay-in"}`}
-      onMouseDown={event => {
-        if (event.target === event.currentTarget) requestClose();
+      className={`fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex justify-end ${
+        closing ? "app-overlay-out" : "app-overlay-in"
+      }`}
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) requestClose();
       }}
     >
       <form
-        onSubmit={async event => {
-          event.preventDefault();
+        onSubmit={async e => {
+          e.preventDefault();
           const saved = await onSubmit(value);
           if (saved) requestClose();
         }}
-        className={`h-full w-full max-w-md bg-card border-l border-border shadow-xl flex flex-col ${closing ? "app-sidepanel-out" : "app-sidepanel-in"}`}
+        className={`h-full w-full max-w-md bg-card border-l border-border shadow-2xl flex flex-col ${
+          closing ? "app-sidepanel-out" : "app-sidepanel-in"
+        }`}
       >
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-foreground">{title}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Los cambios se guardan directamente en Base de Datos.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Sector Sur — Nivel Medio Superior</p>
           </div>
-          <button type="button" onClick={requestClose} className="w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary flex items-center justify-center">
+          <button
+            type="button"
+            onClick={requestClose}
+            className="w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary flex items-center justify-center transition-colors"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {panel.tab === "facultades" && (
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {isPrepa && (
             <>
-              <TextField label="Código" value={(value as Facultad).codigo} disabled={panel.mode === "edit"} onChange={codigo => update({ codigo })} />
-              <TextField label="Nombre" value={(value as Facultad).nombre} onChange={nombre => update({ nombre })} />
-            </>
-          )}
-
-          {panel.tab === "carreras" && (
-            <>
-              <SelectBox
-                label="Facultad"
-                value={(value as CarreraCatalogo).facultadCodigo}
-                onChange={facultadCodigo => update({ facultadCodigo })}
-                options={catalogos.facultades.map(f => ({ value: f.codigo, label: `${f.codigo} - ${f.nombre}` }))}
-              />
-              <SelectBox
-                label="Nivel"
-                value={(value as CarreraCatalogo).nivelId}
-                onChange={nivelId => update({ nivelId })}
-                options={catalogos.niveles.map(n => ({ value: n.id, label: n.nombre }))}
-              />
-              <TextField label="Nombre" value={(value as CarreraCatalogo).nombre} onChange={nombre => update({ nombre })} />
-            </>
-          )}
-
-          {panel.tab === "niveles" && (
-            <>
-              <TextField
-                label="Nombre"
-                value={(value as NivelCatalogo).nombre}
-                onChange={nombre => update({
-                  nombre,
-                  id: panel.mode === "create" ? slugify(nombre) : (value as NivelCatalogo).id,
-                })}
-              />
-              <TextField label="Abreviatura" value={(value as NivelCatalogo).abreviatura} onChange={abreviatura => update({ abreviatura })} />
-              <NumberField label="Pago MXN" value={(value as NivelCatalogo).pago} onChange={pago => update({ pago })} />
-              <NumberField
-                label="Orden"
-                value={(value as NivelCatalogo).orden}
-                onChange={orden => update({ orden })}
-                tooltip="Define la posición en la que aparece este nivel en catálogos, formularios y reportes. Los números menores se muestran primero."
-              />
-              <div className="grid grid-cols-[56px_1fr] gap-2">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  Clave de la Escuela <span className="text-amber-500">*</span>
+                </label>
                 <input
-                  type="color"
-                  value={(value as NivelCatalogo).colorHex}
-                  onChange={event => update({ colorHex: event.target.value })}
-                  className="h-10 w-14 rounded-lg border border-border bg-secondary/50 p-1"
+                  type="text"
+                  value={(value as Preparatoria).clave}
+                  disabled={panel.mode === "edit"}
+                  onChange={e => update({ clave: e.target.value.trim() })}
+                  placeholder="Ej. 8210"
+                  className="w-full h-9 bg-secondary/50 border border-border rounded-lg px-3 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 disabled:opacity-50"
                 />
-                <TextField label="Color" value={(value as NivelCatalogo).colorHex} onChange={colorHex => update({ colorHex })} />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  Nombre de la Unidad Académica <span className="text-amber-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={(value as Preparatoria).nombre}
+                  onChange={e => update({ nombre: e.target.value })}
+                  placeholder="Ej. Preparatoria Concordia"
+                  className="w-full h-9 bg-secondary/50 border border-border rounded-lg px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Modalidades Educativas Ofertadas <span className="text-amber-500">*</span>
+                </label>
+                <div className="space-y-2 bg-secondary/20 p-3 rounded-xl border border-border">
+                  {MODALIDADES.map(mod => {
+                    const currentMods = (value as Preparatoria).modalidades || [];
+                    const isChecked = currentMods.includes(mod);
+                    return (
+                      <label key={mod} className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={e => {
+                            const next = e.target.checked
+                              ? [...currentMods, mod]
+                              : currentMods.filter(m => m !== mod);
+                            update({ modalidades: next });
+                          }}
+                          className="w-4 h-4 rounded border-border text-amber-500 focus:ring-amber-400/20"
+                        />
+                        <span className="font-medium">{mod}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </>
           )}
 
-          {panel.tab === "tramites" && (
+          {!isPrepa && (
             <>
-              <TextField label="ID" value={(value as TramiteCatalogo).id} disabled={panel.mode === "edit"} onChange={id => update({ id: slugify(id) })} />
-              <TextField
-                label="Nombre"
-                value={(value as TramiteCatalogo).nombre}
-                onChange={nombre => update({
-                  nombre,
-                  id: panel.mode === "create" && !(value as TramiteCatalogo).id ? slugify(nombre) : (value as TramiteCatalogo).id,
-                })}
-              />
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  Identificador ID
+                </label>
+                <input
+                  type="text"
+                  value={(value as TramiteCatalogo).id}
+                  disabled={panel.mode === "edit"}
+                  onChange={e => update({ id: slugify(e.target.value) })}
+                  placeholder="certificado"
+                  className="w-full h-9 bg-secondary/50 border border-border rounded-lg px-3 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 disabled:opacity-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  Nombre del Trámite
+                </label>
+                <input
+                  type="text"
+                  value={(value as TramiteCatalogo).nombre}
+                  onChange={e => update({ nombre: e.target.value })}
+                  placeholder="Certificado"
+                  className="w-full h-9 bg-secondary/50 border border-border rounded-lg px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
+                />
+              </div>
             </>
           )}
 
-          <button
-            type="button"
-            onClick={toggleActive}
-            disabled={!canManage || saving || deleting}
-            className={`w-full h-10 rounded-lg border text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
-              (value as { activo: boolean }).activo
-                ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-600"
-                : "border-red-500/25 bg-red-500/10 text-red-500"
-            }`}
-          >
-            <Check className="w-3.5 h-3.5" />
-            {(value as { activo: boolean }).activo ? "Activo" : "Inactivo"}
-          </button>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={toggleActive}
+              disabled={!canManage || saving || deleting}
+              className={`w-full h-10 rounded-lg border text-xs font-bold flex items-center justify-center gap-2 transition-colors ${
+                (value as { activo?: boolean }).activo !== false
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "border-red-500/30 bg-red-500/10 text-red-500"
+              }`}
+            >
+              <Check className="w-3.5 h-3.5" />
+              {(value as { activo?: boolean }).activo !== false ? "Registro Activo" : "Registro Inactivo"}
+            </button>
+          </div>
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
         </div>
 
         {confirmDelete && (
-          <div className="mx-5 mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
-            <p className="text-xs font-semibold text-red-600 dark:text-red-300">
-              ¿Eliminar {confirmDeleteText}?
+          <div className="mx-6 mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3.5">
+            <p className="text-xs font-bold text-red-600 dark:text-red-300">
+              ¿Eliminar {(value as { nombre: string }).nombre}?
             </p>
-            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-              Esta acción no se puede deshacer. Si el registro ya está en uso, la Base de Datos no permitirá eliminarlo.
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Esta acción no se puede deshacer.
             </p>
             <div className="mt-3 flex justify-end gap-2">
               <button
@@ -595,40 +588,47 @@ function CatalogPanel({
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="h-8 px-3 rounded-lg bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-[11px] font-bold flex items-center gap-1.5 transition-colors"
+                className="h-8 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-bold flex items-center gap-1.5 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                {deleting ? "Eliminando..." : "Eliminar"}
+                Confirmar
               </button>
             </div>
           </div>
         )}
 
-        <div className="px-5 py-4 border-t border-border bg-secondary/20 flex items-center justify-between gap-2">
+        <div className="p-6 border-t border-border flex items-center justify-between gap-3 bg-secondary/10">
           <div>
-            {panel.mode === "edit" && canManage && (
+            {panel.mode === "edit" && canManage && !confirmDelete && (
               <button
                 type="button"
                 onClick={() => setConfirmDelete(true)}
                 disabled={saving || deleting}
-                className="h-9 px-3 rounded-lg border border-red-500/20 bg-red-500/10 text-xs font-bold text-red-600 hover:bg-red-500/15 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                className="h-9 px-3 rounded-lg border border-red-500/25 text-red-500 hover:bg-red-500/10 text-xs font-semibold flex items-center gap-1.5 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Eliminar
               </button>
             )}
           </div>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={requestClose} disabled={deleting} className="h-9 px-4 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary disabled:opacity-50 transition-colors">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={requestClose}
+              disabled={saving || deleting}
+              className="h-9 px-4 rounded-lg border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary transition-colors"
+            >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={!canManage || saving || deleting}
-              className="h-9 px-4 rounded-lg bg-amber-400 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 transition-colors"
-            >
-              {saving ? "Guardando..." : "Guardar"}
-            </button>
+            {canManage && (
+              <button
+                type="submit"
+                disabled={saving || deleting}
+                className="h-9 px-5 rounded-lg bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50 shadow-sm"
+              >
+                {saving ? "Guardando..." : "Guardar"}
+              </button>
+            )}
           </div>
         </div>
       </form>
@@ -636,26 +636,44 @@ function CatalogPanel({
   );
 }
 
-function CatalogTable({ headers, children }: { headers: string[]; children: ReactNode }) {
+// --------------------------------------------------------------------------------
+// Utility Components & Helpers
+// --------------------------------------------------------------------------------
+
+function CatalogTable({ headers, children }: { headers: string[]; children: React.ReactNode }) {
   return (
-    <table className="w-full text-left">
-      <thead className="sticky top-0 z-10 bg-secondary/70 backdrop-blur border-b border-border">
+    <table className="w-full text-xs text-left">
+      <thead className="sticky top-0 bg-secondary/90 backdrop-blur-sm border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
         <tr>
-          {headers.map(header => (
-            <th key={header} className="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              {header}
+          {headers.map((h, i) => (
+            <th key={i} className="px-4 py-2.5">
+              {h}
             </th>
           ))}
         </tr>
       </thead>
-      <tbody>{children}</tbody>
+      <tbody className="divide-y divide-border/40">{children}</tbody>
     </table>
   );
 }
 
-function Cell({ children, mono, strong }: { children: ReactNode; mono?: boolean; strong?: boolean }) {
+function Cell({
+  children,
+  strong,
+  mono,
+  className = "",
+}: {
+  children: React.ReactNode;
+  strong?: boolean;
+  mono?: boolean;
+  className?: string;
+}) {
   return (
-    <td className={`px-4 py-3 text-xs text-foreground align-middle ${mono ? "font-mono" : ""} ${strong ? "font-semibold" : ""}`}>
+    <td
+      className={`px-4 py-3 text-xs ${
+        strong ? "font-semibold text-foreground" : "text-muted-foreground"
+      } ${mono ? "font-mono" : ""} ${className}`}
+    >
       {children}
     </td>
   );
@@ -664,209 +682,206 @@ function Cell({ children, mono, strong }: { children: ReactNode; mono?: boolean;
 function ActionCell({ canManage, onClick }: { canManage: boolean; onClick: () => void }) {
   return (
     <td className="px-4 py-3 text-right">
-      <button
-        type="button"
-        onClick={event => {
-          event.stopPropagation();
-          onClick();
-        }}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-        title={canManage ? "Editar" : "Ver detalle"}
-        aria-label={canManage ? "Editar" : "Ver detalle"}
-      >
-        <Edit3 className="w-3.5 h-3.5" />
-      </button>
+      {canManage && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onClick();
+              }}
+              className="w-7 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary flex items-center justify-center transition-colors inline-flex"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Editar registro</TooltipContent>
+        </Tooltip>
+      )}
     </td>
-  );
-}
-
-function handleRowKey(event: React.KeyboardEvent<HTMLTableRowElement>, action: () => void) {
-  if (event.key !== "Enter" && event.key !== " ") return;
-  event.preventDefault();
-  action();
-}
-
-function EmptyRow({ colSpan }: { colSpan: number }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="px-4 py-12 text-center text-xs text-muted-foreground">
-        No hay registros para mostrar.
-      </td>
-    </tr>
   );
 }
 
 function StatusBadge({ active }: { active: boolean }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ${
-      active
-        ? "bg-emerald-500/10 text-emerald-600"
-        : "bg-red-500/10 text-red-500"
-    }`}>
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+        active
+          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+          : "bg-red-500/10 border-red-500/20 text-red-500"
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-emerald-500" : "bg-red-500"}`} />
       {active ? "Activo" : "Inactivo"}
     </span>
   );
 }
 
-function TextField({ label, value, onChange, disabled }: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-}) {
+function EmptyRow({ colSpan }: { colSpan: number }) {
   return (
-    <label className="block">
-      <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">{label}</span>
-      <input
-        value={value}
-        disabled={disabled}
-        onChange={event => onChange(event.target.value)}
-        className="w-full h-10 bg-secondary/50 border border-border rounded-lg px-3 text-sm text-foreground disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/40 transition-all"
-      />
-    </label>
+    <tr>
+      <td colSpan={colSpan} className="py-12 text-center text-xs text-muted-foreground">
+        No se encontraron registros que coincidan con la búsqueda.
+      </td>
+    </tr>
   );
-}
-
-function NumberField({ label, value, onChange, tooltip }: {
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-  tooltip?: string;
-}) {
-  const inputId = useId();
-
-  return (
-    <div className="block">
-      <div className="mb-1.5 flex items-center gap-1.5">
-        <label htmlFor={inputId} className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          {label}
-        </label>
-        {tooltip && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
-                aria-label={`Ayuda sobre ${label}`}
-                onClick={event => event.preventDefault()}
-              >
-                <CircleHelp className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6} className="max-w-64 normal-case tracking-normal leading-relaxed">
-              {tooltip}
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-      <input
-        id={inputId}
-        type="number"
-        min={0}
-        value={value}
-        onChange={event => onChange(Number(event.target.value))}
-        className="w-full h-10 bg-secondary/50 border border-border rounded-lg px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/40 transition-all"
-      />
-    </div>
-  );
-}
-
-function SelectBox({ label, value, onChange, options }: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <label className="block">
-      <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">{label}</span>
-      <CustomSelect value={value} onChange={onChange} options={options} />
-    </label>
-  );
-}
-
-function validateCatalog(tab: CatalogTab, mode: PanelMode, value: PanelState["value"], catalogos: Catalogos) {
-  if (tab === "facultades") {
-    const item = value as Facultad;
-    if (!/^\d{4}$/.test(item.codigo.trim())) return "El código debe tener exactamente 4 dígitos.";
-    if (!item.nombre.trim()) return "El nombre de la facultad es obligatorio.";
-    const duplicate = catalogos.facultades.some(f => f.codigo !== item.codigo && normalize(f.nombre) === normalize(item.nombre));
-    if (duplicate) return "Ya existe una facultad con ese nombre.";
-  }
-
-  if (tab === "carreras") {
-    const item = value as CarreraCatalogo;
-    if (!item.facultadCodigo) return "Selecciona una facultad.";
-    if (!item.nivelId) return "Selecciona un nivel.";
-    if (!item.nombre.trim()) return "El nombre de la carrera es obligatorio.";
-    const duplicate = catalogos.carreras.some(c =>
-      (mode === "create" || c.id !== item.id) &&
-      c.facultadCodigo === item.facultadCodigo &&
-      c.nivelId === item.nivelId &&
-      normalize(c.nombre) === normalize(item.nombre)
-    );
-    if (duplicate) return "Ya existe esa carrera para la facultad y nivel seleccionados.";
-  }
-
-  if (tab === "niveles") {
-    const item = value as NivelCatalogo;
-    if (!/^[a-z0-9_]+$/.test(item.id.trim())) return "El ID solo puede usar minúsculas, números y guiones bajos.";
-    if (!item.nombre.trim()) return "El nombre del nivel es obligatorio.";
-    if (!item.abreviatura.trim()) return "La abreviatura es obligatoria.";
-    if (item.pago < 0) return "El pago no puede ser negativo.";
-    if (!/^#[0-9A-Fa-f]{6}$/.test(item.colorHex)) return "El color debe tener formato #RRGGBB.";
-    if (!Number.isFinite(item.orden)) return "El orden debe ser numérico.";
-    const duplicateId = catalogos.niveles.some(n => mode === "create" && n.id === item.id);
-    if (duplicateId) return "Ya existe un nivel con ese ID.";
-    const duplicateName = catalogos.niveles.some(n => n.id !== item.id && normalize(n.nombre) === normalize(item.nombre));
-    if (duplicateName) return "Ya existe un nivel con ese nombre.";
-  }
-
-  if (tab === "tramites") {
-    const item = value as TramiteCatalogo;
-    if (!/^[a-z0-9_]+$/.test(item.id.trim())) return "El ID solo puede usar minúsculas, números y guiones bajos.";
-    if (!item.nombre.trim()) return "El nombre del trámite es obligatorio.";
-    const duplicateId = catalogos.tramites.some(t => mode === "create" && t.id === item.id);
-    if (duplicateId) return "Ya existe un trámite con ese ID.";
-    const duplicateName = catalogos.tramites.some(t => t.id !== item.id && normalize(t.nombre) === normalize(item.nombre));
-    if (duplicateName) return "Ya existe un trámite con ese nombre.";
-  }
-
-  return "";
 }
 
 function normalize(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
-function slugify(value: string) {
-  return normalize(value)
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+function slugify(text: string) {
+  return normalize(text).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-function tabSingular(tab: CatalogTab) {
-  if (tab === "facultades") return "facultad";
-  if (tab === "carreras") return "carrera";
-  if (tab === "niveles") return "nivel";
-  return "trámite";
-}
-
-function getCatalogDisplayName(tab: CatalogTab, value: PanelState["value"]) {
-  if (tab === "facultades") {
-    const item = value as Facultad;
-    return `la facultad ${item.codigo} - ${item.nombre}`;
+function validateCatalog(
+  tab: CatalogTab,
+  _mode: PanelMode,
+  value: PanelState["value"],
+  _catalogos: Catalogos
+): string | null {
+  if (tab === "preparatorias") {
+    const p = value as Preparatoria;
+    if (!p.clave.trim()) return "La clave de la preparatoria es obligatoria.";
+    if (!p.nombre.trim()) return "El nombre de la preparatoria es obligatorio.";
+    if (!p.modalidades || p.modalidades.length === 0) return "Debes seleccionar al menos una modalidad.";
+  } else {
+    const t = value as TramiteCatalogo;
+    if (!t.nombre.trim()) return "El nombre del trámite es obligatorio.";
   }
-
-  if (tab === "carreras") {
-    return `la carrera ${(value as CarreraCatalogo).nombre}`;
-  }
-
-  if (tab === "niveles") {
-    return `el nivel ${(value as NivelCatalogo).nombre}`;
-  }
-
-  return `el trámite ${(value as TramiteCatalogo).nombre}`;
+  return null;
 }
 
+function EditCostoBaseModal({
+  currentCosto,
+  onClose,
+  onSave,
+}: {
+  currentCosto: number;
+  onClose: () => void;
+  onSave: (nuevoCosto: number) => Promise<void> | void;
+}) {
+  const [costo, setCosto] = useState<number>(currentCosto);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isNaN(costo) || costo < 0) {
+      setError("Ingresa un monto válido mayor o igual a 0.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(costo);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al actualizar el costo base");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const presets = [500, 600, 700, 800];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden app-modal-in">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+              <DollarSign className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Costo Base del Certificado</h3>
+              <p className="text-[11px] text-muted-foreground">Configuración del importe general para nuevos trámites</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 text-xs text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-emerald-600 dark:text-emerald-400">Nota operativa:</span>{" "}
+            El nuevo costo base se asignará automáticamente a todas las <strong>nuevas solicitudes</strong> que se capturen a partir de ahora. Las solicitudes existentes conservarán su monto ya asignado.
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Costo Base en MXN ($)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">$</span>
+              <input
+                type="number"
+                min="0"
+                step="10"
+                value={isNaN(costo) ? "" : costo}
+                onChange={e => {
+                  setCosto(Number(e.target.value));
+                  setError("");
+                }}
+                className="w-full bg-secondary/60 border border-border rounded-xl pl-8 pr-16 py-2.5 text-base font-bold font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/40"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">MXN</span>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Valores sugeridos rápidos
+            </label>
+            <div className="flex gap-2">
+              {presets.map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setCosto(p)}
+                  className={`flex-1 py-1.5 text-xs font-mono font-semibold rounded-lg border transition-colors cursor-pointer ${
+                    costo === p
+                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400"
+                      : "border-border hover:bg-secondary text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ${p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+
+          <div className="pt-2 flex justify-end gap-2 border-t border-border">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+            >
+              {saving ? "Guardando..." : "Guardar Costo Base"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

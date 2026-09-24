@@ -1,4 +1,4 @@
-﻿import type * as ExcelJSTypes from "exceljs";
+import type * as ExcelJSTypes from "exceljs";
 import { saveCsvFile } from "../platform/saveCsv";
 import { saveXlsxFile } from "../platform/saveXlsx";
 import tramiteTituloTemplateUrl from "../../FORMATO TRAMITE TITULO.xlsx?url";
@@ -7,8 +7,8 @@ import reporteProductividadTemplateUrl from "../../FORMATO REPORTE DE PRODUCTIVI
 
 // -- Types ----------------------------------------------------------------------
 
-export type NivelEstudio = string;
-
+export type ModalidadPrepa = "Escolarizada" | "Semiescolarizada" | "Nocturno";
+export type TipoCertificado = "Físico" | "Digital";
 export type Turno = "Matutino" | "Vespertino" | "Nocturno" | "Mixto";
 export type EstadoTramite = "pendiente" | "recibido" | "enviado" | "aceptado" | "rechazado";
 export type AdminTab = "alumnos" | "metricas" | "catalogos" | "usuarios" | "mantenimiento";
@@ -48,29 +48,26 @@ export interface CycleSummary {
 
 export interface Alumno {
   id: string;
-  carreraId?: string;
-  nivelId?: string;
-  tramiteId?: string;
-  matricula: string;
+  numeroCuenta: string;            // 8 dígitos sin guion
   nombre: string;
-  carrera: string;
-  nivel: NivelEstudio;
-  turno: Turno;
-  pago: number;        // kept for financial metrics, not shown in form/table
-  email: string;
-  telefono: string;
-  telefonoAlt: string;
-  escuela: string;
-  tramite: string;     // folio number e.g. "T-24-0001"
-  prepaUAS: boolean;   // attended UAS preparatoria
-  prepa: string;       // preparatoria certificate number
-  lic: string;         // cédula / licenciatura certificate number
-  recibio: string;     // date documents were received
-  ingreso: string;     // date entered into system
-  recibido: string;    // date physical documentation was received
-  envio: string;       // date documents were sent (may be empty)
-  reenvio: boolean;    // true if tramite was returned and resent
-  cartaPoder: string;  // power of attorney doc reference (may be empty)
+  preparatoriaClave: string;       // ej. "8210"
+  preparatoriaNombre: string;      // ej. "Preparatoria Concordia"
+  modalidad: ModalidadPrepa;       // "Escolarizada" | "Semiescolarizada" | "Nocturno"
+  turno: Turno;                    // "Matutino" | "Vespertino" | "Nocturno" | "Mixto"
+  tipoCertificado: TipoCertificado;// "Físico" | "Digital"
+  tramite: string;                 // "Certificado"
+  tramiteId?: string;
+  pago: number;                    // 500 por defecto, editable
+  email?: string;                  // opcional
+  telefono?: string;               // opcional
+  telefonoAlt?: string;
+  generacion: string;              // ej. "2021-2024"
+  recibio: string;
+  ingreso: string;
+  recibido: string;
+  envio: string;
+  reenvio: boolean;
+  cartaPoder: string;
   cartaPorte: string;
   localizacion: string;
   observaciones: string;
@@ -88,24 +85,16 @@ export type AlumnoBulkChanges = Partial<Pick<
   | "reenvio"
   | "localizacion"
   | "observaciones"
+  | "pago"
+  | "tipoCertificado"
+  | "turno"
 >>;
 
-export interface CarreraCatalogo {
-  id: string;
-  facultadCodigo: string;
-  nivelId: string;
+export interface Preparatoria {
+  clave: string;
   nombre: string;
-  activo: boolean;
-}
-
-export interface NivelCatalogo {
-  id: string;
-  nombre: NivelEstudio;
-  abreviatura: string;
-  pago: number;
-  colorHex: string;
-  orden: number;
-  activo: boolean;
+  modalidades: ModalidadPrepa[];
+  activo?: boolean;
 }
 
 export interface TramiteCatalogo {
@@ -115,111 +104,66 @@ export interface TramiteCatalogo {
 }
 
 export interface Catalogos {
-  niveles: NivelCatalogo[];
-  facultades: Facultad[];
-  carreras: CarreraCatalogo[];
+  preparatorias: Preparatoria[];
   tramites: TramiteCatalogo[];
 }
 
 // -- Constants ------------------------------------------------------------------
 
-export const NIVELES: NivelEstudio[] = [
-  "Técnico",
-  "Subprofesional",
-  "Técnico Superior Universitario",
-  "Licenciatura",
-  "Maestría",
-  "Doctorado",
-  "Otras Zonas Licenciatura",
-  "Otras Zonas Posgrado",
-];
+export const COSTO_BASE_CERTIFICADO_DEFAULT = 500;
+export const COSTO_BASE_CERTIFICADO = COSTO_BASE_CERTIFICADO_DEFAULT;
 
-export const NIVEL_PAGO: Record<NivelEstudio, number> = {
-  "Técnico": 1500,
-  "Subprofesional": 1500,
-  "Técnico Superior Universitario": 2000,
-  "Licenciatura": 3000,
-  "Maestría": 3500,
-  "Doctorado": 4000,
-  "Otras Zonas Licenciatura": 3000,
-  "Otras Zonas Posgrado": 3500,
-};
-
-export const NIVEL_ABREV: Record<NivelEstudio, string> = {
-  "Licenciatura": "Lic.",
-  "Maestría": "Maest.",
-  "Doctorado": "Doc.",
-  "Técnico": "Téc.",
-  "Subprofesional": "Sub.",
-  "Técnico Superior Universitario": "TSU",
-  "Otras Zonas Licenciatura": "OZL",
-  "Otras Zonas Posgrado": "OZP",
-};
-
-export const NIVEL_COLOR: Record<NivelEstudio, string> = {
-  "Licenciatura": "#3b82f6",
-  "Maestría": "#8b5cf6",
-  "Doctorado": "#10b981",
-  "Técnico": "#f59e0b",
-  "Subprofesional": "#fb923c",
-  "Técnico Superior Universitario": "#06b6d4",
-  "Otras Zonas Licenciatura": "#6366f1",
-  "Otras Zonas Posgrado": "#ec4899",
-};
-
-export interface Facultad {
-  codigo: string;
-  nombre: string;
-  carreras: string[];
-  activo?: boolean;
+export function loadSavedCostoBase(): number {
+  if (typeof window === "undefined") return COSTO_BASE_CERTIFICADO_DEFAULT;
+  const raw = window.localStorage.getItem("app_costo_base_certificado");
+  const val = raw ? Number(raw) : NaN;
+  return !isNaN(val) && val > 0 ? val : COSTO_BASE_CERTIFICADO_DEFAULT;
 }
 
-export const FACULTADES: Facultad[] = [
-  {
-    codigo: "4510",
-    nombre: "Facultad de Ciencias Económicas y Sociales",
-    carreras: ["Economía", "Sociología", "Trabajo Social", "Comunicación", "Pedagogía"],
-  },
-  {
-    codigo: "4520",
-    nombre: "Facultad de Contaduría y Administración",
-    carreras: ["Contaduría Pública", "Administración de Empresas", "Mercadotecnia", "Informática Administrativa", "Ingeniería en Gestión Empresarial"],
-  },
-  {
-    codigo: "4530",
-    nombre: "Facultad de Psicología",
-    carreras: ["Psicología"],
-  },
-  {
-    codigo: "4560",
-    nombre: "Facultad de Enfermería Culiacán",
-    carreras: ["Enfermería", "Nutrición"],
-  },
-  {
-    codigo: "4610",
-    nombre: "Facultad de Medicina Veterinaria y Zootecnia",
-    carreras: ["Medicina Veterinaria y Zootecnia"],
-  },
-  {
-    codigo: "4700",
-    nombre: "Facultad de Derecho Culiacán",
-    carreras: ["Derecho"],
-  },
-  {
-    codigo: "4800",
-    nombre: "Facultad de Ingeniería",
-    carreras: ["Ingeniería Civil", "Ingeniería Industrial", "Ingeniería en Sistemas Computacionales", "Arquitectura"],
-  },
-  {
-    codigo: "5810",
-    nombre: "Facultad de Contaduría y Administración Mazatlán",
-    carreras: ["Contaduría Pública", "Administración de Empresas", "Turismo", "Mercadotecnia"],
-  },
-  {
-    codigo: "5820",
-    nombre: "Facultad de Ingeniería Mazatlán",
-    carreras: ["Ingeniería Civil", "Ingeniería Industrial", "Ingeniería en Sistemas Computacionales"],
-  },
+export function saveCostoBaseToLocal(costo: number): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem("app_costo_base_certificado", String(costo));
+  }
+}
+
+export const MODALIDADES: ModalidadPrepa[] = [
+  "Escolarizada",
+  "Semiescolarizada",
+  "Nocturno",
+];
+
+export const TIPOS_CERTIFICADO: TipoCertificado[] = [
+  "Físico",
+  "Digital",
+];
+
+export const TURNOS: Turno[] = [
+  "Matutino",
+  "Vespertino",
+  "Nocturno",
+  "Mixto",
+];
+
+export const PREPARATORIAS: Preparatoria[] = [
+  { clave: "8210", nombre: "Preparatoria Concordia", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
+  { clave: "8212", nombre: "Preparatoria Concordia Extensión Potrerillos", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
+  { clave: "8213", nombre: "Preparatoria Concordia Extensión Agua Caliente", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
+  { clave: "8215", nombre: "Preparatoria Concordia Extensión El Verde", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8220", nombre: "Preparatoria El Rosario", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8221", nombre: "Preparatoria El Rosario Extensión Agua Verde", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8222", nombre: "Preparatoria El Rosario Extensión Los Pozos", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8230", nombre: "Preparatoria Escuinapa", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
+  { clave: "8231", nombre: "Preparatoria Escuinapa Extensión Isla Del Bosque", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8232", nombre: "Preparatoria Escuinapa Extensión Teacapán", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8240", nombre: "Preparatoria Mazatlán", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8242", nombre: "Preparatoria Mazatlán Ext. La Noria", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8250", nombre: "Preparatoria Antonio Rosales", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8251", nombre: "Preparatoria Antonio Rosales Extensión Mármol", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
+  { clave: "8260", nombre: "Preparatoria Rubén Jaramillo", modalidades: ["Escolarizada", "Nocturno"], activo: true },
+  { clave: "8261", nombre: "Preparatoria Villa Unión", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8262", nombre: "Preparatoria Rubén Jaramillo Extensión El Quelite", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8270", nombre: "Preparatoria San Ignacio", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8271", nombre: "Preparatoria San Ignacio Extensión Piaxtla", modalidades: ["Escolarizada"], activo: true },
 ];
 
 export const MESES = [
@@ -270,15 +214,15 @@ export function fmtCurrency(n: number): string {
 }
 
 export async function exportMetricsToCSV(
-  rows: { nivel: NivelEstudio; total: number; ingreso: number }[],
+  rows: { preparatoria: string; total: number; ingreso: number }[],
   totalCount: number,
   totalIncome: number,
   label: string
 ) {
-  const headers = ["Nivel", "Cantidad", "Ingreso (MXN)", "% del Total"];
+  const headers = ["Preparatoria", "Cantidad", "Ingreso (MXN)", "% del Total"];
   const dataRows = rows.map(r => {
     const pct = totalIncome > 0 ? ((r.ingreso / totalIncome) * 100).toFixed(1) : "0.0";
-    return [r.nivel, r.total, r.ingreso, `${pct}%`];
+    return [r.preparatoria, r.total, r.ingreso, `${pct}%`];
   });
   const totalPct = "100.0%";
   const totalRow = ["TOTAL", totalCount, totalIncome, totalPct];
@@ -290,20 +234,19 @@ export async function exportMetricsToCSV(
 
 export async function exportToCSV(alumnos: Alumno[], mes: number, anio: number) {
   const headers = [
-    "No.", "Nombre del Egresado", "Carrera", "Nivel", "Facultad",
-    "Trámite", "Prepa UAS", "Prepa", "Lic", "Teléfono", "Tel. Alternativo", "E-Mail",
-    "Ingreso", "Recibido", "Envío", "Reenvío", "Carta Poder",
+    "No.", "No. Cuenta", "Nombre del Alumno", "Preparatoria", "Clave", "Modalidad",
+    "Turno", "Tipo Certificado", "Generación", "Costo ($)", "Teléfono", "Tel. Alternativo", "E-Mail",
+    "Ingreso", "Recibido", "Envío", "Reenvío", "Carta Poder", "Estado",
   ];
   const rows = alumnos.map((a, i) => [
-    i + 1, a.nombre, a.carrera, a.nivel, a.escuela,
-    a.tramite, a.prepaUAS ? "Sí" : "No", a.prepa, a.lic,
-    a.telefono, a.telefonoAlt, a.email,
-    a.ingreso, a.recibido, a.envio, a.reenvio ? "Sí" : "No", a.cartaPoder,
+    i + 1, a.numeroCuenta, a.nombre, a.preparatoriaNombre, a.preparatoriaClave, a.modalidad,
+    a.turno, a.tipoCertificado, a.generacion, a.pago, a.telefono ?? "", a.telefonoAlt ?? "", a.email ?? "",
+    a.ingreso, a.recibido, a.envio, a.reenvio ? "Sí" : "No", a.cartaPoder, a.estado,
   ]);
   const csv = [headers, ...rows]
     .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
     .join("\r\n");
-  await saveCsvFile(`titulacion_${MESES[mes - 1]}_${anio}.csv`, csv);
+  await saveCsvFile(`certificados_${MESES[mes - 1]}_${anio}.csv`, csv);
 }
 
 type ExcelCellStyle = Partial<ExcelJSTypes.Style>;
@@ -421,16 +364,8 @@ function formatAppDateForExcel(value: string): string {
   return `${match[1].padStart(2, "0")}/${String(month + 1).padStart(2, "0")}/${match[3]}`;
 }
 
-function formatNivelForExcel(nivel: NivelEstudio) {
-  const normalized = normalizeToken(nivel);
-  if (normalized.includes("doctor")) return "DOCTORADO";
-  if (normalized.includes("maestr")) return "MAESTRIA";
-  if (normalized.includes("superior")) return "TSU";
-  if (normalized.includes("tecnico")) return "TECNICO";
-  if (normalized.includes("subprof")) return "SUBPROF";
-  if (normalized.includes("posgrado")) return "POSGRADO";
-  if (normalized.includes("licenciatura")) return "LIC";
-  return nivel.toUpperCase();
+function formatModalidadForExcel(modalidad: string) {
+  return (modalidad || "").toUpperCase();
 }
 
 function formatEstadoForExcel(estado: EstadoTramite) {
@@ -582,9 +517,9 @@ function fillFormatoControlSheet(
     const row = sheet.getRow(rowNumber);
     row.getCell(2).value = pageIndex * CONTROL_SOLICITUDES_ROWS_PER_PAGE + offset + 1;
     row.getCell(3).value = alumno.nombre.trim().toUpperCase();
-    row.getCell(4).value = alumno.carrera.trim().toUpperCase();
-    row.getCell(5).value = formatNivelForExcel(alumno.nivel);
-    row.getCell(6).value = "T.TITULO";
+    row.getCell(4).value = (alumno.preparatoriaNombre || alumno.preparatoriaClave || "").trim().toUpperCase();
+    row.getCell(5).value = formatModalidadForExcel(alumno.modalidad);
+    row.getCell(6).value = "CERTIFICADO";
   }
 }
 
@@ -820,14 +755,10 @@ function normalizeProductividadMainSheetStyles(
   });
 }
 
-function matchesCareer(alumno: Alumno, carrera: CarreraCatalogo) {
-  if (alumno.carreraId) return alumno.carreraId === carrera.id;
-  return alumno.escuela === carrera.facultadCodigo && cleanStr(alumno.carrera) === cleanStr(carrera.nombre);
-}
-
-function matchesNivel(alumno: Alumno, nivel: NivelCatalogo) {
-  if (alumno.nivelId) return alumno.nivelId === nivel.id;
-  return cleanStr(alumno.nivel) === cleanStr(nivel.nombre);
+function matchesPrepa(alumno: Alumno, prepa: Preparatoria, modalidad?: string) {
+  const matchesClave = alumno.preparatoriaClave === prepa.clave || cleanStr(alumno.preparatoriaNombre) === cleanStr(prepa.nombre);
+  if (!modalidad) return matchesClave;
+  return matchesClave && cleanStr(alumno.modalidad) === cleanStr(modalidad);
 }
 
 function metricFor(alumnos: Alumno[]) {
@@ -859,40 +790,32 @@ function writeProductividadMainSheet(
 
   clearRowsFrom(sheet, PRODUCTIVIDAD_FIRST_DATA_ROW);
 
-  const facultades = catalogos.facultades.filter(facultad => facultad.activo !== false);
-  const carreras = catalogos.carreras.filter(carrera => carrera.activo);
-  const activeFacultyCodes = new Set(facultades.map(facultad => facultad.codigo));
-  const visibleCarreras = carreras.filter(carrera => activeFacultyCodes.has(carrera.facultadCodigo));
+  const prepas = (catalogos.preparatorias && catalogos.preparatorias.length > 0 ? catalogos.preparatorias : PREPARATORIAS).filter(p => p.activo !== false);
   const facultyBlocks: ProductividadFacultyBlock[] = [];
   let rowNumber = PRODUCTIVIDAD_FIRST_DATA_ROW;
-  let visibleFacultadIndex = 0;
+  let visibleIndex = 0;
 
-  facultades.forEach(facultad => {
-    const facultadCarreras = visibleCarreras
-      .filter(carrera => carrera.facultadCodigo === facultad.codigo)
-      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-
-    if (facultadCarreras.length === 0) return;
-
-    const fill = REPORT_FACULTAD_FILLS[visibleFacultadIndex % REPORT_FACULTAD_FILLS.length];
-    visibleFacultadIndex++;
+  prepas.forEach(prepa => {
+    const modalidades = prepa.modalidades.length > 0 ? prepa.modalidades : (["Escolarizada"] as ModalidadPrepa[]);
+    const fill = REPORT_FACULTAD_FILLS[visibleIndex % REPORT_FACULTAD_FILLS.length];
+    visibleIndex++;
     const startRow = rowNumber;
 
-    facultadCarreras.forEach(carrera => {
+    modalidades.forEach(modalidad => {
       const row = sheet.getRow(rowNumber);
       applyReportRowBase(row, PRODUCTIVIDAD_MAIN_LAST_COLUMN);
 
       for (let col = 1; col <= 3; col++) {
         row.getCell(col).fill = cloneExcelValue(fill);
       }
-      row.getCell(3).value = carrera.nombre;
+      row.getCell(3).value = modalidad;
       row.getCell(3).alignment = { vertical: "middle", horizontal: "left", wrapText: true };
 
       PRODUCTIVIDAD_MONTH_BLOCKS.forEach(block => {
-        const alumnosCarreraMes = alumnosCiclo.filter(alumno =>
-          alumno.mes === block.mes && matchesCareer(alumno, carrera)
+        const alumnosPrepaMes = alumnosCiclo.filter(alumno =>
+          alumno.mes === block.mes && matchesPrepa(alumno, prepa, modalidad)
         );
-        const stats = metricFor(alumnosCarreraMes);
+        const stats = metricFor(alumnosPrepaMes);
         const totalCell = row.getCell(block.totalCol);
         const ingresoCell = row.getCell(block.ingresoCol);
 
@@ -919,19 +842,17 @@ function writeProductividadMainSheet(
     }
 
     const claveCell = sheet.getCell(startRow, 1);
-    const facultadCell = sheet.getCell(startRow, 2);
-    claveCell.value = facultad.codigo;
-    facultadCell.value = facultad.nombre;
+    const nombreCell = sheet.getCell(startRow, 2);
+    claveCell.value = prepa.clave;
+    nombreCell.value = prepa.nombre;
     claveCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    facultadCell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    nombreCell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
     claveCell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF000000" } };
-    facultadCell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF000000" } };
+    nombreCell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF000000" } };
 
     PRODUCTIVIDAD_MONTH_BLOCKS.forEach(block => {
-      const totalFacultadMes = alumnosCiclo.filter(alumno =>
-        alumno.mes === block.mes &&
-        alumno.escuela === facultad.codigo &&
-        facultadCarreras.some(carrera => matchesCareer(alumno, carrera))
+      const totalPrepaMes = alumnosCiclo.filter(alumno =>
+        alumno.mes === block.mes && matchesPrepa(alumno, prepa)
       ).length;
 
       if (startRow < endRow) {
@@ -940,15 +861,12 @@ function writeProductividadMainSheet(
       }
       const cell = sheet.getCell(startRow, block.facultadTotalCol);
       applyReportCellBase(cell);
-      cell.value = totalFacultadMes;
+      cell.value = totalPrepaMes;
       cell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF000000" } };
     });
 
-    const alumnosFacultadCiclo = alumnosCiclo.filter(alumno =>
-      alumno.escuela === facultad.codigo &&
-      facultadCarreras.some(carrera => matchesCareer(alumno, carrera))
-    );
-    const facultadCycleStats = metricFor(alumnosFacultadCiclo);
+    const alumnosPrepaCiclo = alumnosCiclo.filter(alumno => matchesPrepa(alumno, prepa));
+    const prepaCycleStats = metricFor(alumnosPrepaCiclo);
 
     if (startRow < endRow) {
       sheet.mergeCells(startRow, PRODUCTIVIDAD_CYCLE_TOTAL_COL, endRow, PRODUCTIVIDAD_CYCLE_TOTAL_COL);
@@ -959,8 +877,8 @@ function writeProductividadMainSheet(
     const cycleIngresoCell = sheet.getCell(startRow, PRODUCTIVIDAD_CYCLE_INGRESO_COL);
     applyReportCellBase(cycleTotalCell);
     applyReportCellBase(cycleIngresoCell);
-    cycleTotalCell.value = facultadCycleStats.total;
-    setCurrencyCell(cycleIngresoCell, facultadCycleStats.ingreso);
+    cycleTotalCell.value = prepaCycleStats.total;
+    setCurrencyCell(cycleIngresoCell, prepaCycleStats.ingreso);
     cycleTotalCell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF000000" } };
     cycleIngresoCell.font = { name: "Arial", size: 9, bold: true, color: { argb: "FF000000" } };
 
@@ -976,20 +894,14 @@ function writeProductividadMainSheet(
   totalRow.getCell(1).alignment = { vertical: "middle", horizontal: "center" };
 
   PRODUCTIVIDAD_MONTH_BLOCKS.forEach(block => {
-    const visibleAlumnosMes = alumnosCiclo.filter(alumno =>
-      alumno.mes === block.mes &&
-      visibleCarreras.some(carrera => matchesCareer(alumno, carrera))
-    );
+    const visibleAlumnosMes = alumnosCiclo.filter(alumno => alumno.mes === block.mes);
     const stats = metricFor(visibleAlumnosMes);
     totalRow.getCell(block.totalCol).value = stats.total;
     setCurrencyCell(totalRow.getCell(block.ingresoCol), stats.ingreso);
     totalRow.getCell(block.facultadTotalCol).value = stats.total;
   });
 
-  const visibleAlumnosCiclo = alumnosCiclo.filter(alumno =>
-    visibleCarreras.some(carrera => matchesCareer(alumno, carrera))
-  );
-  const cycleStats = metricFor(visibleAlumnosCiclo);
+  const cycleStats = metricFor(alumnosCiclo);
   totalRow.getCell(PRODUCTIVIDAD_CYCLE_TOTAL_COL).value = cycleStats.total;
   setCurrencyCell(totalRow.getCell(PRODUCTIVIDAD_CYCLE_INGRESO_COL), cycleStats.ingreso);
   applyReportCellBase(totalRow.getCell(PRODUCTIVIDAD_CYCLE_TOTAL_COL), REPORT_CYCLE_TOTAL_FILL);
@@ -1014,7 +926,7 @@ function writeProductividadMainSheet(
 function writeProductividadMensualSheet(
   sheet: ExcelJSTypes.Worksheet,
   alumnosCiclo: Alumno[],
-  catalogos: Catalogos,
+  _catalogos: Catalogos,
   cicloAnioFin: number
 ) {
   const fullCycleLabel = getCicloEscolarLabel(cicloAnioFin);
@@ -1040,25 +952,21 @@ function writeProductividadMensualSheet(
 
   clearRowsFrom(sheet, PRODUCTIVIDAD_FIRST_DATA_ROW);
 
-  const niveles = catalogos.niveles
-    .filter(nivel => nivel.activo)
-    .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, "es"));
-
   let rowNumber = PRODUCTIVIDAD_FIRST_DATA_ROW;
-  niveles.forEach(nivel => {
+  MODALIDADES.forEach(mod => {
     const row = sheet.getRow(rowNumber);
     applyReportRowBase(row, PRODUCTIVIDAD_MENSUAL_LAST_COLUMN);
-    row.getCell(1).value = nivel.nombre;
+    row.getCell(1).value = mod;
     row.getCell(1).alignment = { vertical: "middle", horizontal: "left", wrapText: true };
 
-    let totalNivel = 0;
-    let ingresoNivel = 0;
+    let totalMod = 0;
+    let ingresoMod = 0;
     PRODUCTIVIDAD_MENSUAL_BLOCKS.forEach((block, blockIndex) => {
       const stats = metricFor(alumnosCiclo.filter(alumno =>
-        alumno.mes === block.mes && matchesNivel(alumno, nivel)
+        alumno.mes === block.mes && cleanStr(alumno.modalidad) === cleanStr(mod)
       ));
-      totalNivel += stats.total;
-      ingresoNivel += stats.ingreso;
+      totalMod += stats.total;
+      ingresoMod += stats.ingreso;
       applyReportCellBase(row.getCell(block.totalCol), monthlyColumnFills[blockIndex]);
       applyReportCellBase(row.getCell(block.ingresoCol), monthlyColumnFills[blockIndex]);
       row.getCell(block.totalCol).value = stats.total;
@@ -1067,8 +975,8 @@ function writeProductividadMensualSheet(
 
     applyReportCellBase(row.getCell(PRODUCTIVIDAD_MENSUAL_TOTAL_COL), monthlyCycleTotalFill);
     applyReportCellBase(row.getCell(PRODUCTIVIDAD_MENSUAL_INGRESO_COL), monthlyCycleTotalFill);
-    row.getCell(PRODUCTIVIDAD_MENSUAL_TOTAL_COL).value = totalNivel;
-    setCurrencyCell(row.getCell(PRODUCTIVIDAD_MENSUAL_INGRESO_COL), ingresoNivel);
+    row.getCell(PRODUCTIVIDAD_MENSUAL_TOTAL_COL).value = totalMod;
+    setCurrencyCell(row.getCell(PRODUCTIVIDAD_MENSUAL_INGRESO_COL), ingresoMod);
     row.commit();
     rowNumber++;
   });
@@ -1116,7 +1024,7 @@ export async function exportReporteProductividadTituloXlsx(
 
   const buffer = await workbook.xlsx.writeBuffer();
   await saveXlsxFile(
-    `reporte_productividad_titulo_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
+    `reporte_productividad_certificados_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
     new Uint8Array(buffer as ArrayBuffer)
   );
 }
@@ -1160,15 +1068,15 @@ export async function exportTramiteTituloXlsx(alumnos: Alumno[], cicloAnioFin: n
 
     row.getCell(1).value = index + 1;
     row.getCell(2).value = alumno.nombre;
-    row.getCell(3).value = alumno.carrera;
-    row.getCell(4).value = formatNivelForExcel(alumno.nivel);
-    row.getCell(5).value = alumno.escuela;
+    row.getCell(3).value = alumno.preparatoriaNombre;
+    row.getCell(4).value = alumno.modalidad;
+    row.getCell(5).value = alumno.preparatoriaClave;
     row.getCell(6).value = alumno.tramite;
-    row.getCell(7).value = alumno.prepaUAS ? "S" : "N";
-    row.getCell(8).value = alumno.prepa;
-    row.getCell(9).value = alumno.lic;
-    setPhoneValue(row.getCell(10), alumno.telefono, alumno.telefonoAlt);
-    row.getCell(11).value = alumno.email;
+    row.getCell(7).value = alumno.tipoCertificado;
+    row.getCell(8).value = alumno.generacion;
+    row.getCell(9).value = alumno.numeroCuenta;
+    setPhoneValue(row.getCell(10), alumno.telefono ?? "", alumno.telefonoAlt ?? "");
+    row.getCell(11).value = alumno.email ?? "";
     row.getCell(12).value = alumno.ingreso ? formatAppDateForExcel(alumno.ingreso) : "";
     row.getCell(13).value = alumno.recibido ? formatAppDateForExcel(alumno.recibido) : "";
     row.getCell(14).value = alumno.envio ? formatAppDateForExcel(alumno.envio) : "";
@@ -1182,7 +1090,7 @@ export async function exportTramiteTituloXlsx(alumnos: Alumno[], cicloAnioFin: n
 
   const buffer = await workbook.xlsx.writeBuffer();
   await saveXlsxFile(
-    `titulacion_ciclo_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
+    `certificados_ciclo_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
     new Uint8Array(buffer as ArrayBuffer)
   );
 }
