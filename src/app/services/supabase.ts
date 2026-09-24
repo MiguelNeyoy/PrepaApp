@@ -89,12 +89,16 @@ type SolicitudDetalleRow = {
   numero_cuenta?: string | null;
   matricula?: string | null;
   tramite_id?: string;
-  nombre: string;
+  nombre?: string;
+  alumno_nombre?: string;
   email?: string | null;
+  alumno_email?: string | null;
   telefono?: string | null;
   telefono_alt?: string | null;
-  tramite: string;
+  telefono_alternativo?: string | null;
+  tramite?: string;
   pago?: number;
+  pago_mxn?: number;
   preparatoria_clave?: string;
   preparatoria_nombre?: string;
   modalidad?: ModalidadPrepa;
@@ -102,17 +106,23 @@ type SolicitudDetalleRow = {
   tipo_certificado?: TipoCertificado;
   generacion?: string | null;
   recibio?: string | null;
+  fecha_documentos_recibidos?: string | null;
   ingreso?: string | null;
+  fecha_ingreso_sistema?: string | null;
   recibido?: string | null;
+  fecha_recepcion_fisica?: string | null;
   envio?: string | null;
+  fecha_envio?: string | null;
   reenvio?: boolean;
   carta_poder?: string | null;
   carta_porte?: string | null;
   localizacion?: string | null;
   observaciones?: string | null;
   estado: EstadoTramite;
-  mes: number;
-  anio: number;
+  mes?: number;
+  periodo_mes?: number;
+  anio?: number;
+  periodo_anio?: number;
 };
 
 type SupabaseDbError = {
@@ -479,7 +489,7 @@ function mapSolicitud(row: SolicitudDetalleRow, catalogos: Catalogos): Alumno {
   return {
     id: row.id,
     numeroCuenta: row.numero_cuenta || row.matricula || "",
-    nombre: row.nombre,
+    nombre: row.alumno_nombre || row.nombre || "",
     preparatoriaClave: row.preparatoria_clave || "",
     preparatoriaNombre: row.preparatoria_nombre || prepa?.nombre || row.preparatoria_clave || "",
     modalidad: row.modalidad || "Escolarizada",
@@ -487,23 +497,23 @@ function mapSolicitud(row: SolicitudDetalleRow, catalogos: Catalogos): Alumno {
     tipoCertificado: row.tipo_certificado || "Físico",
     tramite: row.tramite || "Certificado",
     tramiteId: row.tramite_id || "certificado",
-    pago: row.pago ?? 500,
-    email: row.email ?? "",
+    pago: Number(row.pago_mxn ?? row.pago ?? 500),
+    email: row.alumno_email ?? row.email ?? "",
     telefono: row.telefono ?? "",
-    telefonoAlt: row.telefono_alt ?? "",
+    telefonoAlt: row.telefono_alternativo ?? row.telefono_alt ?? "",
     generacion: row.generacion ?? "",
-    recibio: fromIsoDate(row.recibio),
-    ingreso: fromIsoDate(row.ingreso),
-    recibido: fromIsoDate(row.recibido),
-    envio: fromIsoDate(row.envio),
+    recibio: fromIsoDate(row.fecha_documentos_recibidos ?? row.recibio),
+    ingreso: fromIsoDate(row.fecha_ingreso_sistema ?? row.ingreso),
+    recibido: fromIsoDate(row.fecha_recepcion_fisica ?? row.recibido),
+    envio: fromIsoDate(row.fecha_envio ?? row.envio),
     reenvio: Boolean(row.reenvio),
     cartaPoder: row.carta_poder ?? "",
     cartaPorte: row.carta_porte ?? "",
     localizacion: row.localizacion ?? "",
     observaciones: row.observaciones ?? "",
     estado: row.estado,
-    mes: row.mes,
-    anio: row.anio,
+    mes: Number(row.periodo_mes ?? row.mes ?? (new Date().getMonth() + 1)),
+    anio: Number(row.periodo_anio ?? row.anio ?? new Date().getFullYear()),
   };
 }
 
