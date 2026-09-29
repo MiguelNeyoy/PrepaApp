@@ -1,7 +1,7 @@
 use tauri::Manager;
 use serde::{Deserialize, Serialize};
 
-const LOGIN_CREDENTIAL_SERVICE: &str = "com.apptitulacion.desktop";
+const LOGIN_CREDENTIAL_SERVICE: &str = "com.appprepa.desktop";
 const LOGIN_CREDENTIAL_ACCOUNT: &str = "saved-login";
 
 #[derive(Deserialize, Serialize)]

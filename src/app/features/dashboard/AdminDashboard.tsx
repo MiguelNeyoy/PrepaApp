@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useRef, useState } from "react";
-import { BarChart3, Check, ChevronDown, Copy, Database, ExternalLink, Eye, EyeOff, Info, LogOut, Minus, Moon, RefreshCw, Save, Settings, ShieldCheck, Square, Sun, Trash2, Users, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { BarChart3, Check, ChevronDown, Copy, Database, ExternalLink, Eye, EyeOff, Info, LogOut, Minus, Moon, RefreshCw, Save, Settings, ShieldCheck, Square, Sun, Trash2, Users, X, Zap } from "lucide-react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -10,7 +10,8 @@ import { MetricasTab } from "../metricas/MetricasTab";
 import { UsuariosTab } from "../usuarios/UsuariosTab";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { isTauriRuntime } from "../../utils/window";
-import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CarreraCatalogo, CycleSummary, Facultad, ManagedProfile, ManagedRole, NivelCatalogo, ThemeMode, TramiteCatalogo } from "../../domain";
+import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CycleSummary, ManagedProfile, ManagedRole, Preparatoria, ThemeMode, TramiteCatalogo } from "../../domain";
+import { enableMockMode, isMockMode } from "../../services/supabase";
 import uasLogo from "../../../imports/uas.png";
 
 export type TitlebarToast = {
@@ -19,7 +20,7 @@ export type TitlebarToast = {
   variant: "success" | "error" | "info";
 };
 
-const ABOUT_REPO_URL = "https://github.com/Frankz1997/app-titulacion.git";
+const ABOUT_REPO_URL = "https://github.com/MiguelNeyoy/app-titulacion.git";
 const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150];
 
 function AboutModal({ onClose }: { onClose: () => void }) {
@@ -101,9 +102,9 @@ function AboutModal({ onClose }: { onClose: () => void }) {
 
         <div className="p-5 space-y-5">
           <section className="space-y-2">
-            <h3 className="text-sm font-bold text-foreground">APP Titulación</h3>
+            <h3 className="text-sm font-bold text-foreground">Prepa APP</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Aplicación administrativa para gestionar y dar seguimiento a trámites de titulación, catálogos, usuarios y métricas del proceso.
+              Aplicación administrativa para gestionar y dar seguimiento a trámites de certificados en preparatorias , catálogos, usuarios y métricas del proceso.
             </p>
           </section>
 
@@ -251,7 +252,7 @@ export function AppTitleBar({
         {!integratedLoginTitleBar && (
           <>
             <img src={uasLogo} alt="UAS" className="w-[20px] h-[20px] object-contain flex-shrink-0" />
-            <span className="min-w-0 flex-1 text-[11px] font-bold text-foreground truncate">APP Titulación</span>
+            <span className="min-w-0 flex-1 text-[11px] font-bold text-foreground truncate">Certificados Prepa</span>
             {showUiScaleControl && (
               <div className="flex h-full flex-shrink-0 items-center">
                 <Select value={String(uiScale)} onValueChange={value => void onUiScaleChange(Number(value))}>
@@ -659,17 +660,17 @@ export function LoginScreen({
               className="w-28 h-28 object-contain mb-7 drop-shadow-2xl"
             />
             <h1 className="text-2xl font-bold text-white tracking-tight leading-tight mb-2">
-              Sistema de<br />Titulación
+              Sistema de<br />Certificados
             </h1>
             <p className="text-sm text-white/40 leading-relaxed max-w-xs">
-              Gestión y seguimiento de trámites de titulación.
+              Control y expedición de certificados de preparatoria &middot; Sector Sur.
             </p>
 
             <div className="mt-8 space-y-2">
               {[
-                "Control de estados de trámite",
-                "Seguimiento por facultad y carrera",
-                "Reportes y métricas mensuales",
+                "19 Unidades Académicas y Extensiones",
+                "Certificados Físicos y Digitales",
+                "Control de Trámites y Métricas",
               ].map(feature => (
                 <div key={feature} className="flex items-center gap-2.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400/70 flex-shrink-0" />
@@ -686,11 +687,19 @@ export function LoginScreen({
 
         <section className="ml-auto w-[58%] flex flex-col items-center justify-center px-12">
           <div className="w-full max-w-xs">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-500 mb-5">
-              Acceso al panel
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">
+                Acceso al panel
+              </p>
+              {isMockMode && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Modo Offline
+                </span>
+              )}
+            </div>
             <p className="text-xl font-bold text-foreground tracking-tight mb-1">Iniciar sesión</p>
-            <p className="text-xs text-muted-foreground mb-8">
+            <p className="text-xs text-muted-foreground mb-6">
               Ingresa tus credenciales institucionales para continuar.
             </p>
 
@@ -719,7 +728,7 @@ export function LoginScreen({
                 <div className="relative">
                   <input
                     type={showPassword ? "text" : "password"}
-                  value={password}
+                    value={password}
                     onChange={event => {
                       setPassword(event.target.value);
                       setHasLoginError(false);
@@ -767,7 +776,7 @@ export function LoginScreen({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-70 text-white rounded-lg py-2.5 text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm shadow-amber-400/30 mt-1"
+                className="w-full bg-amber-400 hover:bg-amber-300 active:bg-amber-500 disabled:opacity-70 text-white rounded-lg py-2.5 text-sm font-bold transition-all flex items-center justify-center gap-2 shadow-sm shadow-amber-400/30 mt-1 cursor-pointer"
               >
                 {loading ? (
                   <>
@@ -779,7 +788,30 @@ export function LoginScreen({
                 )}
               </button>
 
-              <p className="pt-4 text-center text-[10px] text-muted-foreground/40">
+              <div className="relative my-3">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border/70" />
+                </div>
+                <div className="relative flex justify-center text-[10px] uppercase">
+                  <span className="bg-background px-2 text-muted-foreground/70 font-medium">O prueba directa</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  enableMockMode();
+                  setEmail("ventanilla.prepa@uas.edu.mx");
+                  setPassword("admin123");
+                  await onLogin("ventanilla.prepa@uas.edu.mx", "admin123", false);
+                }}
+                className="w-full border border-dashed border-amber-500/50 hover:border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded-lg py-2.5 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+              >
+                <Zap className="w-4 h-4 text-amber-500" />
+                Entrar en Modo Local / Pruebas Offline
+              </button>
+
+              <p className="pt-2 text-center text-[10px] text-muted-foreground/40">
                 Acceso restringido al personal autorizado
               </p>
             </form>
@@ -1006,18 +1038,14 @@ export function AdminDashboard({
   onBulkUpdate,
   onDelete,
   onAdd,
-  onCreateFacultad,
-  onUpdateFacultad,
-  onDeleteFacultad,
-  onCreateCarrera,
-  onUpdateCarrera,
-  onDeleteCarrera,
-  onCreateNivel,
-  onUpdateNivel,
-  onDeleteNivel,
+  onCreatePreparatoria,
+  onUpdatePreparatoria,
+  onDeletePreparatoria,
   onCreateTramite,
   onUpdateTramite,
   onDeleteTramite,
+  costoBase,
+  onUpdateCostoBase,
   profiles,
   cycleSummaries,
   onCreateUser,
@@ -1038,18 +1066,14 @@ export function AdminDashboard({
   onBulkUpdate: (ids: string[], changes: AlumnoBulkChanges) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
   onAdd: (a: Alumno) => Promise<void> | void;
-  onCreateFacultad: (facultad: Facultad) => Promise<void> | void;
-  onUpdateFacultad: (facultad: Facultad) => Promise<void> | void;
-  onDeleteFacultad: (facultad: Facultad) => Promise<void> | void;
-  onCreateCarrera: (carrera: Omit<CarreraCatalogo, "id">) => Promise<void> | void;
-  onUpdateCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
-  onDeleteCarrera: (carrera: CarreraCatalogo) => Promise<void> | void;
-  onCreateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
-  onUpdateNivel: (nivel: NivelCatalogo) => Promise<void> | void;
-  onDeleteNivel: (nivel: NivelCatalogo) => Promise<void> | void;
+  onCreatePreparatoria: (prepa: Preparatoria) => Promise<void> | void;
+  onUpdatePreparatoria: (prepa: Preparatoria) => Promise<void> | void;
+  onDeletePreparatoria: (prepa: Preparatoria) => Promise<void> | void;
   onCreateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onUpdateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onDeleteTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
+  costoBase?: number;
+  onUpdateCostoBase?: (nuevoCosto: number) => Promise<void> | void;
   profiles: ManagedProfile[];
   cycleSummaries: CycleSummary[];
   onCreateUser: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
@@ -1146,6 +1170,7 @@ export function AdminDashboard({
             <AlumnosTab
               alumnos={alumnos}
               catalogos={catalogos}
+              costoBase={costoBase}
               onUpdate={onUpdate}
               onBulkUpdate={onBulkUpdate}
               onDelete={onDelete}
@@ -1162,15 +1187,11 @@ export function AdminDashboard({
             <CatalogosTab
               catalogos={catalogosAdmin}
               canManage={isAdmin}
-              onCreateFacultad={onCreateFacultad}
-              onUpdateFacultad={onUpdateFacultad}
-              onDeleteFacultad={onDeleteFacultad}
-              onCreateCarrera={onCreateCarrera}
-              onUpdateCarrera={onUpdateCarrera}
-              onDeleteCarrera={onDeleteCarrera}
-              onCreateNivel={onCreateNivel}
-              onUpdateNivel={onUpdateNivel}
-              onDeleteNivel={onDeleteNivel}
+              costoBase={costoBase}
+              onUpdateCostoBase={onUpdateCostoBase}
+              onCreatePreparatoria={onCreatePreparatoria}
+              onUpdatePreparatoria={onUpdatePreparatoria}
+              onDeletePreparatoria={onDeletePreparatoria}
               onCreateTramite={onCreateTramite}
               onUpdateTramite={onUpdateTramite}
               onDeleteTramite={onDeleteTramite}

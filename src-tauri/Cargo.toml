@@ -1,12 +1,12 @@
 [package]
-name = "app-titulacion"
-version = "0.0.1"
-description = "APP Titulación"
-authors = ["APP Titulación"]
+name = "app-Prepa"
+version = "1.0.0"
+description = "APP Prepa"
+authors = ["APP Prepa"]
 edition = "2021"
 
 [lib]
-name = "app_titulacion_lib"
+name = "app_prepa_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
