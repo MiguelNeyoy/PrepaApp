@@ -41,7 +41,7 @@ export function disableMockMode() {
   }
 }
 
-export const supabase = !isMockMode && supabaseUrl && supabaseKey
+export const supabase = supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: true,
@@ -807,10 +807,16 @@ export async function deleteTramite(id: string) {
 // --------------------------------------------------------------------------------
 
 export async function signInAdmin(email: string, password: string) {
-  if (isMockMode) {
-    // In mock mode, allow instant login
+  if (email === "ventanilla.prepa@uas.edu.mx" && isMockMode) {
+    // En modo mock explicito con usuario de pruebas, permitir acceso instantaneo
     return;
   }
+
+  // Si hay credenciales de Supabase configuradas, desactivar el modo mock para conectar a la nube
+  if (supabaseUrl && supabaseKey) {
+    disableMockMode();
+  }
+
   try {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
