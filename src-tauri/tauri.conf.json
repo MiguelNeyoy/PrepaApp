@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "APP Titulación",
-  "version": "0.0.1",
-  "identifier": "com.apptitulacion.desktop",
+  "productName": "APP Prepa",
+  "version": "1.0.0",
+  "identifier": "com.appprepa.desktop",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "APP Titulación",
+        "title": "APP Prepa",
         "width": 860,
         "height": 540,
         "minWidth": 860,
