@@ -815,6 +815,65 @@ export function AlumnosTab({
     onToast?.(`${ids.length} trámites marcados como enviados`, "success");
   };
 
+  const [exportingFormato, setExportingFormato] = useState(false);
+  const [exportingCiclo, setExportingCiclo] = useState(false);
+
+  // Alumnos elegibles para el Formato de Envío (Recibidos o Rechazados)
+  const alumnosElegiblesFormato = useMemo(() => {
+    return cicloAlumnos.filter(
+      a => selectedIds.has(a.id) && (a.estado === "recibido" || a.estado === "rechazado")
+    );
+  }, [cicloAlumnos, selectedIds]);
+
+  const handleGenerarFormato = async () => {
+    if (alumnosElegiblesFormato.length === 0 || exportingFormato) return;
+    setExportingFormato(true);
+    try {
+      const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
+      await exportFormatoControlSolicitudesXlsx(alumnosElegiblesFormato);
+
+      const recibidos = alumnosElegiblesFormato
+        .filter(a => a.estado === "recibido")
+        .map(a => a.id);
+      const rechazados = alumnosElegiblesFormato
+        .filter(a => a.estado === "rechazado")
+        .map(a => a.id);
+
+      await Promise.all([
+        recibidos.length > 0
+          ? onBulkUpdate(recibidos, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: false })
+          : Promise.resolve(),
+        rechazados.length > 0
+          ? onBulkUpdate(rechazados, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: true })
+          : Promise.resolve(),
+      ]);
+
+      setSelectedIds(new Set());
+      const hojas = Math.ceil(alumnosElegiblesFormato.length / 20);
+      onToast?.(
+        `Formato generado (${alumnosElegiblesFormato.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
+        "success"
+      );
+    } catch (err) {
+      onToast?.(err instanceof Error ? err.message : "Error al generar formato", "error");
+    } finally {
+      setExportingFormato(false);
+    }
+  };
+
+  const handleExportCicloExcel = async () => {
+    if (cicloAlumnos.length === 0 || exportingCiclo) return;
+    setExportingCiclo(true);
+    try {
+      await exportTramiteTituloXlsx(cicloAlumnos, selectedCicloAnioFin);
+      onToast?.("Concentrado de ciclo exportado correctamente", "success");
+    } catch (err) {
+      onToast?.(err instanceof Error ? err.message : "Error al exportar concentrado", "error");
+    } finally {
+      setExportingCiclo(false);
+    }
+  };
+
   // Metrics for header
   const totalMes = mesAlumnos.length;
   const pendientesMes = mesAlumnos.filter(a => a.estado === "pendiente").length;
@@ -986,6 +1045,22 @@ export function AlumnosTab({
         </div>
 
         <div className="flex items-center gap-2">
+          {alumnosElegiblesFormato.length > 0 && (
+            <button
+              type="button"
+              disabled={exportingFormato}
+              onClick={handleGenerarFormato}
+              className="h-9 px-3.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50"
+              title="Descarga el formato de envío oficial (20 por página) y actualiza automáticamente el estado a Enviado (Culiacán)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              {exportingFormato ? "Generando..." : `Generar Formato Envío (${alumnosElegiblesFormato.length})`}
+              <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
+                {Math.ceil(alumnosElegiblesFormato.length / 20)} hoja{Math.ceil(alumnosElegiblesFormato.length / 20) > 1 ? "s" : ""}
+              </span>
+            </button>
+          )}
+
           {selectedIds.size > 0 && (
             <>
               <button
@@ -1006,6 +1081,17 @@ export function AlumnosTab({
               </button>
             </>
           )}
+
+          <button
+            type="button"
+            disabled={exportingCiclo || cicloAlumnos.length === 0}
+            onClick={handleExportCicloExcel}
+            className="h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-40"
+            title="Exportar concentrado del ciclo escolar a Excel (.xlsx)"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            {exportingCiclo ? "Generando..." : "Excel Ciclo"}
+          </button>
 
           <button
             type="button"
