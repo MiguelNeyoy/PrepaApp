@@ -50,9 +50,17 @@ export interface Alumno {
   id: string;
   numeroCuenta: string;            // 8 dígitos sin guion
   nombre: string;
+  curp?: string;                   // 18 caracteres CURP
+  folioRecibo?: string;            // Folio del recibo de pago
+  cicloRecibo?: string;            // Ciclo del recibo (ej. "2025-2026" o "2025")
   preparatoriaClave: string;       // ej. "8210"
   preparatoriaNombre: string;      // ej. "Preparatoria Concordia"
   modalidad: ModalidadPrepa;       // "Escolarizada" | "Semiescolarizada" | "Nocturno"
+  carreraCodigo?: string | number; // 1 = Escolarizada, 2 = Semiescolarizada, 3 = Nocturno
+  planEstudio?: string;            // Plan de estudios (ej. "18", "15", "12", "2", "1")
+  microfilm?: string;              // # de Microfilm (ej. "826020230373")
+  revisoHistorial?: boolean;       // Se revisó historial académico (SI/NO)
+  revisoKardex?: boolean;          // Revisó kárdex (SI/NO)
   turno: Turno;                    // "Matutino" | "Vespertino" | "Nocturno" | "Mixto"
   tipoCertificado: TipoCertificado;// "Físico" | "Digital"
   tramite: string;                 // "Certificado"
@@ -74,6 +82,12 @@ export interface Alumno {
   estado: EstadoTramite;
   mes: number;
   anio: number;
+}
+
+export function getDefaultCarreraCodigo(modalidad?: ModalidadPrepa | string): number {
+  if (modalidad === "Semiescolarizada") return 2;
+  if (modalidad === "Nocturno") return 3;
+  return 1;
 }
 
 export type AlumnoBulkChanges = Partial<Pick<
@@ -234,14 +248,40 @@ export async function exportMetricsToCSV(
 
 export async function exportToCSV(alumnos: Alumno[], mes: number, anio: number) {
   const headers = [
-    "No.", "No. Cuenta", "Nombre del Alumno", "Preparatoria", "Clave", "Modalidad",
-    "Turno", "Tipo Certificado", "Generación", "Costo ($)", "Teléfono", "Tel. Alternativo", "E-Mail",
+    "No.", "No. Cuenta", "Nombre del Alumno", "CURP", "Folio Recibo", "Ciclo Recibo",
+    "Clave UA", "Preparatoria", "Modalidad", "Carrera", "Plan", "# de Microfilm",
+    "Revisó Historial", "Revisó Kárdex", "Turno", "Tipo Certificado", "Generación",
+    "Costo ($)", "Teléfono", "Tel. Alternativo", "E-Mail",
     "Ingreso", "Recibido", "Envío", "Reenvío", "Carta Poder", "Estado",
   ];
   const rows = alumnos.map((a, i) => [
-    i + 1, a.numeroCuenta, a.nombre, a.preparatoriaNombre, a.preparatoriaClave, a.modalidad,
-    a.turno, a.tipoCertificado, a.generacion, a.pago, a.telefono ?? "", a.telefonoAlt ?? "", a.email ?? "",
-    a.ingreso, a.recibido, a.envio, a.reenvio ? "Sí" : "No", a.cartaPoder, a.estado,
+    i + 1,
+    a.numeroCuenta,
+    a.nombre,
+    a.curp ?? "",
+    a.folioRecibo ?? "",
+    a.cicloRecibo || getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(a.mes, a.anio)),
+    a.preparatoriaClave,
+    a.preparatoriaNombre,
+    a.modalidad,
+    a.carreraCodigo ?? getDefaultCarreraCodigo(a.modalidad),
+    a.planEstudio ?? "18",
+    a.microfilm ?? "",
+    a.revisoHistorial === false ? "NO" : "SI",
+    a.revisoKardex === false ? "NO" : "SI",
+    a.turno,
+    a.tipoCertificado,
+    a.generacion,
+    a.pago,
+    a.telefono ?? "",
+    a.telefonoAlt ?? "",
+    a.email ?? "",
+    a.ingreso,
+    a.recibido,
+    a.envio,
+    a.reenvio ? "Sí" : "No",
+    a.cartaPoder,
+    a.estado,
   ]);
   const csv = [headers, ...rows]
     .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
@@ -482,18 +522,43 @@ function copyWorksheetTemplate(
   return target;
 }
 
-function formatSpanishLongDate(date: Date) {
-  return `${String(date.getDate()).padStart(2, "0")} de ${MESES[date.getMonth()]} de ${date.getFullYear()}`;
+const LOCAL_STORAGE_FOLIO_CORTE = "app_ultimo_folio_corte";
+
+export function loadSavedFolioCorte(): string {
+  if (typeof window === "undefined") return "09";
+  const raw = (window.localStorage.getItem(LOCAL_STORAGE_FOLIO_CORTE) ?? "").trim();
+  return raw || "09";
 }
 
-function formatDateForFilename(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function clearFormatoControlRow(sheet: ExcelJSTypes.Worksheet, rowNumber: number) {
-  for (let col = 2; col <= 6; col++) {
-    sheet.getRow(rowNumber).getCell(col).value = null;
+export function saveFolioCorteToLocal(folio: string): void {
+  if (typeof window !== "undefined" && folio.trim()) {
+    window.localStorage.setItem(LOCAL_STORAGE_FOLIO_CORTE, folio.trim());
   }
+}
+
+function normalizeFolioCorte(folio?: string): string {
+  const clean = (folio ?? loadSavedFolioCorte()).trim();
+  if (!clean) return "09";
+  return /^\d+$/.test(clean) ? clean.padStart(2, "0") : clean.toUpperCase();
+}
+
+function clearFormatoControlRow(sheet: ExcelJSTypes.Worksheet, rowNumber: number, itemIndex: number) {
+  const row = sheet.getRow(rowNumber);
+  row.getCell(2).value = itemIndex;
+  for (let col = 3; col <= 14; col++) {
+    row.getCell(col).value = null;
+  }
+}
+
+function toExcelNumericOrText(raw: string | number | undefined | null): string | number | null {
+  if (raw === undefined || raw === null) return null;
+  const str = String(raw).trim();
+  if (!str) return null;
+  if (/^\d+$/.test(str) && !str.startsWith("0")) {
+    const num = Number(str);
+    if (Number.isSafeInteger(num)) return num;
+  }
+  return str;
 }
 
 function fillFormatoControlSheet(
@@ -501,60 +566,85 @@ function fillFormatoControlSheet(
   alumnos: Alumno[],
   pageIndex: number,
   totalPages: number,
-  emissionDate: string
+  generatedAt: Date,
+  folioCorte: string
 ) {
-  sheet.getCell("G5").value = null;
-  sheet.getCell("B32").value = emissionDate;
-  sheet.getCell("G31").value = `Página ${pageIndex + 1} de ${totalPages}`;
+  // M5: Fecha del corte, N5: FOLIO: XX
+  const dateCell = sheet.getCell("M5");
+  dateCell.value = new Date(Date.UTC(generatedAt.getFullYear(), generatedAt.getMonth(), generatedAt.getDate()));
+  dateCell.numFmt = "mm-dd-yy";
+
+  const folioLabel = totalPages > 1 ? `FOLIO: ${folioCorte} (${pageIndex + 1}/${totalPages})` : `FOLIO: ${folioCorte}`;
+  sheet.getCell("N5").value = folioLabel;
 
   for (let offset = 0; offset < CONTROL_SOLICITUDES_ROWS_PER_PAGE; offset++) {
     const rowNumber = CONTROL_SOLICITUDES_FIRST_DATA_ROW + offset;
     const alumno = alumnos[offset];
+    const numeroFila = offset + 1;
 
-    clearFormatoControlRow(sheet, rowNumber);
+    clearFormatoControlRow(sheet, rowNumber, numeroFila);
     if (!alumno) continue;
 
     const row = sheet.getRow(rowNumber);
-    row.getCell(2).value = pageIndex * CONTROL_SOLICITUDES_ROWS_PER_PAGE + offset + 1;
-    row.getCell(3).value = alumno.nombre.trim().toUpperCase();
-    row.getCell(4).value = (alumno.preparatoriaNombre || alumno.preparatoriaClave || "").trim().toUpperCase();
-    row.getCell(5).value = formatModalidadForExcel(alumno.modalidad);
-    row.getCell(6).value = "CERTIFICADO";
+    const cuentaSinGuion = (alumno.numeroCuenta || "").replace(/\D/g, "");
+    const cicloFallback = getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(alumno.mes, alumno.anio));
+    const cicloRecibo = (alumno.cicloRecibo || cicloFallback).trim();
+    const carreraVal = alumno.carreraCodigo !== undefined && String(alumno.carreraCodigo).trim() !== ""
+      ? alumno.carreraCodigo
+      : getDefaultCarreraCodigo(alumno.modalidad);
+    const planVal = (alumno.planEstudio ?? "").trim() || "18";
+
+    row.getCell(2).value = numeroFila;                                                          // B: NUM. (1..20)
+    row.getCell(3).value = toExcelNumericOrText(cuentaSinGuion);                                // C: NUM. DE CUENTA
+    row.getCell(4).value = alumno.nombre.trim().toUpperCase();                                  // D: NOMBRE DEL SOLICITANTE
+    row.getCell(5).value = toExcelNumericOrText(alumno.folioRecibo);                            // E: FOLIO DEL RECIBO
+    row.getCell(6).value = toExcelNumericOrText(cicloRecibo);                                   // F: CICLO DEL RECIBO
+    row.getCell(7).value = toExcelNumericOrText(alumno.preparatoriaClave);                      // G: CLAVE UA
+    row.getCell(8).value = (alumno.preparatoriaNombre || alumno.preparatoriaClave || "").trim().toUpperCase(); // H: UNIDAD ACADEMICA
+    row.getCell(9).value = toExcelNumericOrText(carreraVal);                                    // I: CARRERA
+    row.getCell(10).value = toExcelNumericOrText(planVal);                                      // J: PLAN
+    row.getCell(11).value = (alumno.curp ?? "").trim().toUpperCase() || null;                   // K: CAPTURAR CURP
+    row.getCell(12).value = (alumno.microfilm ?? "").trim().toUpperCase() || null;              // L: # DE MICROFILM
+    row.getCell(13).value = alumno.revisoHistorial === false ? "NO" : "SI";                     // M: SE REVISO HISTORIAL ACADEMICO
+    row.getCell(14).value = alumno.revisoKardex === false ? "NO" : "SI";                        // N: REVISO KARDEX
   }
 }
 
-export async function exportFormatoControlSolicitudesXlsx(alumnos: Alumno[]) {
+export async function exportFormatoControlSolicitudesXlsx(alumnos: Alumno[], folioInput?: string) {
   const ExcelJS = (await import("exceljs")).default;
   const response = await fetch(formatoControlSolicitudesTemplateUrl);
-  if (!response.ok) throw new Error("No se pudo cargar la plantilla de control de solicitudes.");
+  if (!response.ok) throw new Error("No se pudo cargar la plantilla de corte de certificados.");
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await response.arrayBuffer());
 
   const templateSheet = workbook.worksheets[0];
-  if (!templateSheet) throw new Error("La plantilla de control no contiene una hoja válida.");
+  if (!templateSheet) throw new Error("La plantilla de corte no contiene una hoja válida.");
+
+  const folioCorte = normalizeFolioCorte(folioInput);
+  saveFolioCorteToLocal(folioCorte);
 
   const ordered = [...alumnos];
   const totalPages = Math.max(1, Math.ceil(ordered.length / CONTROL_SOLICITUDES_ROWS_PER_PAGE));
   const sheets = [templateSheet];
 
-  templateSheet.name = "Página 1";
+  templateSheet.name = totalPages === 1 ? "2025-2026-2027" : "Corte 1";
   for (let pageIndex = 1; pageIndex < totalPages; pageIndex++) {
-    sheets.push(copyWorksheetTemplate(workbook, templateSheet, `Página ${pageIndex + 1}`));
+    sheets.push(copyWorksheetTemplate(workbook, templateSheet, `Corte ${pageIndex + 1}`));
   }
 
   const generatedAt = new Date();
-  const emissionDate = formatSpanishLongDate(generatedAt);
-
   sheets.forEach((sheet, pageIndex) => {
     const start = pageIndex * CONTROL_SOLICITUDES_ROWS_PER_PAGE;
     const pageAlumnos = ordered.slice(start, start + CONTROL_SOLICITUDES_ROWS_PER_PAGE);
-    fillFormatoControlSheet(sheet, pageAlumnos, pageIndex, totalPages, emissionDate);
+    fillFormatoControlSheet(sheet, pageAlumnos, pageIndex, totalPages, generatedAt, folioCorte);
   });
 
+  const dayStr = String(generatedAt.getDate()).padStart(2, "0");
+  const monthStr = String(generatedAt.getMonth() + 1).padStart(2, "0");
   const buffer = await workbook.xlsx.writeBuffer();
   await saveXlsxFile(
-    `formato_control_solicitudes_${formatDateForFilename(generatedAt)}.xlsx`,
+    `${folioCorte} CORTE CERTIFICADOS BACHILLERATO URS ${dayStr}-${monthStr}.xlsx`,
     new Uint8Array(buffer as ArrayBuffer)
   );
 }

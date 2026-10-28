@@ -35,7 +35,9 @@ import {
   getCicloEscolarAnioFin,
   getCicloEscolarAnioFinFromPeriodo,
   getCicloEscolarLabel,
+  getDefaultCarreraCodigo,
   getPeriodoAnioForCiclo,
+  loadSavedFolioCorte,
 } from "../../domain";
 import type {
   Alumno,
@@ -87,22 +89,32 @@ function formatGeneration(val: string): string {
 }
 
 function isValidNumeroCuenta(nc: string): boolean {
-  return /^\d{8}$/.test(nc.trim());
+  return /^\d{6,8}$/.test(nc.trim());
 }
 
 function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos, costoBase = COSTO_BASE_CERTIFICADO): Alumno {
   const prepas = catalogos?.preparatorias?.length ? catalogos.preparatorias : PREPARATORIAS;
   const defaultPrepa = prepas[0];
+  const defaultModalidad = defaultPrepa.modalidades[0] || "Escolarizada";
   const today = new Date();
   const fechaHoy = fmtDate(today.getDate(), mes, anio);
+  const cicloActual = getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(mes, anio));
 
   return {
     id: `new-${Date.now()}`,
     numeroCuenta: "",
     nombre: "",
+    curp: "",
+    folioRecibo: "",
+    cicloRecibo: cicloActual,
     preparatoriaClave: defaultPrepa.clave,
     preparatoriaNombre: defaultPrepa.nombre,
-    modalidad: defaultPrepa.modalidades[0] || "Escolarizada",
+    modalidad: defaultModalidad,
+    carreraCodigo: getDefaultCarreraCodigo(defaultModalidad),
+    planEstudio: "18",
+    microfilm: "",
+    revisoHistorial: true,
+    revisoKardex: true,
     turno: "Matutino",
     tipoCertificado: "Digital",
     tramite: "Certificado",
@@ -330,11 +342,21 @@ function EditModal({
   const handlePrepaChange = (clave: string) => {
     const selected = prepas.find(p => p.clave === clave);
     if (!selected) return;
+    const nextModalidad = selected.modalidades[0] || "Escolarizada";
     setForm(prev => ({
       ...prev,
       preparatoriaClave: selected.clave,
       preparatoriaNombre: selected.nombre,
-      modalidad: selected.modalidades[0] || "Escolarizada",
+      modalidad: nextModalidad,
+      carreraCodigo: getDefaultCarreraCodigo(nextModalidad),
+    }));
+  };
+
+  const handleModalidadChange = (nextModalidad: ModalidadPrepa) => {
+    setForm(prev => ({
+      ...prev,
+      modalidad: nextModalidad,
+      carreraCodigo: getDefaultCarreraCodigo(nextModalidad),
     }));
   };
 
@@ -359,7 +381,7 @@ function EditModal({
       return;
     }
     if (!isValidNumeroCuenta(nc)) {
-      setError("El Número de Cuenta debe tener exactamente 8 dígitos numéricos sin guion.");
+      setError("El Número de Cuenta debe contener únicamente dígitos numéricos sin guion.");
       return;
     }
     if (!form.nombre.trim()) {
@@ -438,24 +460,24 @@ function EditModal({
           {/* Section 1: Alumno */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-2">
-              Datos del Alumno
+              Datos del Solicitante
             </p>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className={labelCls}>
-                  Número de Cuenta (8 dígitos){requiredMark}
+                  No. Cuenta (sin guion){requiredMark}
                 </label>
                 <input
                   className={`${fieldCls} font-mono font-bold text-amber-500 tracking-wider`}
                   value={form.numeroCuenta}
                   onChange={e => set("numeroCuenta", e.target.value.replace(/\D/g, "").slice(0, 8))}
-                  placeholder="20210041"
+                  placeholder="23401737"
                   inputMode="numeric"
                   maxLength={8}
                 />
               </div>
               <div className="col-span-2">
-                <label className={labelCls}>Nombre Completo{requiredMark}</label>
+                <label className={labelCls}>Nombre del Solicitante{requiredMark}</label>
                 <input
                   className={fieldCls}
                   value={form.nombre}
@@ -463,16 +485,26 @@ function EditModal({
                   placeholder="APELLIDO PATERNO MATERNO NOMBRE(S)"
                 />
               </div>
+              <div>
+                <label className={labelCls}>CURP (18 caracteres)</label>
+                <input
+                  className={`${fieldCls} font-mono uppercase tracking-wider`}
+                  value={form.curp || ""}
+                  onChange={e => set("curp", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 18))}
+                  placeholder="CECG080910HNLRRLA3"
+                  maxLength={18}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Section 2: Preparatoria y Modalidad */}
+          {/* Section 2: Preparatoria, Modalidad, Carrera y Plan */}
           <div className="border-t border-border/50 pt-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-2">
-              Adscripción y Programa Educativo
+              Adscripción y Plan de Estudios
             </p>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-2">
+            <div className="grid grid-cols-6 gap-4">
+              <div className="col-span-3">
                 <label className={labelCls}>Unidad Académica (Preparatoria){requiredMark}</label>
                 <CustomSelect
                   value={form.preparatoriaClave}
@@ -484,21 +516,86 @@ function EditModal({
                 />
               </div>
               <div>
-                <label className={labelCls}>Modalidad Ofertada{requiredMark}</label>
+                <label className={labelCls}>Modalidad{requiredMark}</label>
                 <CustomSelect
                   value={form.modalidad}
-                  onChange={v => set("modalidad", v as ModalidadPrepa)}
+                  onChange={v => handleModalidadChange(v as ModalidadPrepa)}
                   options={modalidadOptions}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Carrera (Cód.)</label>
+                <input
+                  className={`${fieldCls} font-mono text-center font-bold`}
+                  value={form.carreraCodigo ?? getDefaultCarreraCodigo(form.modalidad)}
+                  onChange={e => set("carreraCodigo", e.target.value.replace(/\D/g, "").slice(0, 3))}
+                  placeholder="1"
+                  inputMode="numeric"
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Plan Estudio</label>
+                <input
+                  className={`${fieldCls} font-mono text-center font-bold`}
+                  value={form.planEstudio ?? "18"}
+                  onChange={e => set("planEstudio", e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="18"
+                  inputMode="numeric"
                 />
               </div>
             </div>
           </div>
 
-          {/* Section 3: Datos del Trámite */}
-          <div className="border-t border-border/50 pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-2">
-              Detalles del Certificado
+          {/* Section 3: Datos del Trámite y Corte de Certificados */}
+          <div className="border-t border-border/50 pt-3 space-y-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500">
+              Detalles del Certificado y Formato de Corte
             </p>
+            <div className="grid grid-cols-4 gap-4">
+              <div>
+                <label className={labelCls}>Folio del Recibo</label>
+                <input
+                  className={`${fieldCls} font-mono`}
+                  value={form.folioRecibo || ""}
+                  onChange={e => set("folioRecibo", e.target.value.replace(/\D/g, "").slice(0, 12))}
+                  placeholder="14495580"
+                  inputMode="numeric"
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Ciclo del Recibo</label>
+                <input
+                  className={`${fieldCls} font-mono`}
+                  value={form.cicloRecibo || ""}
+                  onChange={e => set("cicloRecibo", e.target.value)}
+                  placeholder="2025-2026"
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}># de Microfilm</label>
+                <input
+                  className={`${fieldCls} font-mono uppercase`}
+                  value={form.microfilm || ""}
+                  onChange={e => set("microfilm", e.target.value.toUpperCase())}
+                  placeholder="826020230373"
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Generación{requiredMark}</label>
+                <input
+                  className={fieldCls}
+                  value={form.generacion}
+                  onChange={e => set("generacion", formatGeneration(e.target.value))}
+                  placeholder="2021-2024"
+                  inputMode="numeric"
+                  maxLength={9}
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-4 gap-4">
               <div>
                 <label className={labelCls}>Tipo de Certificado{requiredMark}</label>
@@ -519,18 +616,6 @@ function EditModal({
               </div>
 
               <div>
-                <label className={labelCls}>Generación{requiredMark}</label>
-                <input
-                  className={fieldCls}
-                  value={form.generacion}
-                  onChange={e => set("generacion", formatGeneration(e.target.value))}
-                  placeholder="2021-2024"
-                  inputMode="numeric"
-                  maxLength={9}
-                />
-              </div>
-
-              <div>
                 <label className={labelCls}>
                   Costo ($ MXN){requiredMark}
                 </label>
@@ -547,6 +632,23 @@ function EditModal({
                     onChange={e => set("pago", Number(e.target.value))}
                   />
                 </div>
+              </div>
+
+              <div className="flex flex-col justify-end gap-1.5 pb-0.5">
+                <label className="flex items-center gap-2 text-xs font-medium text-foreground cursor-pointer select-none">
+                  <Checkbox
+                    checked={form.revisoHistorial !== false}
+                    onChange={checked => set("revisoHistorial", checked)}
+                  />
+                  <span>Revisó Historial ({form.revisoHistorial !== false ? "SI" : "NO"})</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs font-medium text-foreground cursor-pointer select-none">
+                  <Checkbox
+                    checked={form.revisoKardex !== false}
+                    onChange={checked => set("revisoKardex", checked)}
+                  />
+                  <span>Revisó Kárdex ({form.revisoKardex !== false ? "SI" : "NO"})</span>
+                </label>
               </div>
             </div>
           </div>
@@ -817,6 +919,7 @@ export function AlumnosTab({
 
   const [exportingFormato, setExportingFormato] = useState(false);
   const [exportingCiclo, setExportingCiclo] = useState(false);
+  const [folioCorte, setFolioCorte] = useState(() => loadSavedFolioCorte());
 
   // Alumnos elegibles para el Formato de Envío (Recibidos o Rechazados)
   const alumnosElegiblesFormato = useMemo(() => {
@@ -830,7 +933,8 @@ export function AlumnosTab({
     setExportingFormato(true);
     try {
       const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
-      await exportFormatoControlSolicitudesXlsx(alumnosElegiblesFormato);
+      const cleanFolio = folioCorte.trim() || "09";
+      await exportFormatoControlSolicitudesXlsx(alumnosElegiblesFormato, cleanFolio);
 
       const recibidos = alumnosElegiblesFormato
         .filter(a => a.estado === "recibido")
@@ -851,7 +955,7 @@ export function AlumnosTab({
       setSelectedIds(new Set());
       const hojas = Math.ceil(alumnosElegiblesFormato.length / 20);
       onToast?.(
-        `Formato generado (${alumnosElegiblesFormato.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
+        `Corte Folio ${cleanFolio} generado (${alumnosElegiblesFormato.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
         "success"
       );
     } catch (err) {
@@ -1046,19 +1150,32 @@ export function AlumnosTab({
 
         <div className="flex items-center gap-2">
           {alumnosElegiblesFormato.length > 0 && (
-            <button
-              type="button"
-              disabled={exportingFormato}
-              onClick={handleGenerarFormato}
-              className="h-9 px-3.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50"
-              title="Descarga el formato de envío oficial (20 por página) y actualiza automáticamente el estado a Enviado (Culiacán)"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              {exportingFormato ? "Generando..." : `Generar Formato Envío (${alumnosElegiblesFormato.length})`}
-              <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
-                {Math.ceil(alumnosElegiblesFormato.length / 20)} hoja{Math.ceil(alumnosElegiblesFormato.length / 20) > 1 ? "s" : ""}
-              </span>
-            </button>
+            <div className="flex items-center rounded-lg border border-emerald-600/40 bg-emerald-600/10 overflow-hidden shadow-sm">
+              <label className="flex items-center gap-1.5 pl-2.5 pr-2 h-9 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                Folio:
+                <input
+                  type="text"
+                  value={folioCorte}
+                  onChange={e => setFolioCorte(e.target.value.slice(0, 6))}
+                  placeholder="09"
+                  className="w-11 h-6 rounded bg-card border border-emerald-500/40 px-1.5 text-center font-mono text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  title="Número de Folio del Corte (ej. 09)"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={exportingFormato}
+                onClick={handleGenerarFormato}
+                className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
+                title="Descarga el formato de Corte de Certificados URS (20 por hoja) y actualiza automáticamente el estado a Enviado (Culiacán)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                {exportingFormato ? "Generando..." : `Generar Formato Corte (${alumnosElegiblesFormato.length})`}
+                <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
+                  {Math.ceil(alumnosElegiblesFormato.length / 20)} hoja{Math.ceil(alumnosElegiblesFormato.length / 20) > 1 ? "s" : ""}
+                </span>
+              </button>
+            </div>
           )}
 
           {selectedIds.size > 0 && (

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { MESES_ABR, PREPARATORIAS, COSTO_BASE_CERTIFICADO_DEFAULT, fmtDate, getCicloEscolarAnioFin, getCicloEscolarAnioFinFromPeriodo, getCicloEscolarLabel, loadSavedCostoBase, saveCostoBaseToLocal } from "../domain";
+import { MESES_ABR, PREPARATORIAS, COSTO_BASE_CERTIFICADO_DEFAULT, fmtDate, getCicloEscolarAnioFin, getCicloEscolarAnioFinFromPeriodo, getCicloEscolarLabel, getDefaultCarreraCodigo, loadSavedCostoBase, saveCostoBaseToLocal } from "../domain";
 import type {
   Account,
   Alumno,
@@ -86,8 +86,11 @@ type SolicitudDetalleRow = {
   id: string;
   legacy_id?: string | null;
   folio?: string | null;
+  folio_recibo?: string | null;
+  ciclo_recibo?: string | null;
   numero_cuenta?: string | null;
   matricula?: string | null;
+  curp?: string | null;
   tramite_id?: string;
   nombre?: string;
   alumno_nombre?: string;
@@ -102,6 +105,11 @@ type SolicitudDetalleRow = {
   preparatoria_clave?: string;
   preparatoria_nombre?: string;
   modalidad?: ModalidadPrepa;
+  carrera_codigo?: string | number | null;
+  plan_estudio?: string | null;
+  microfilm?: string | null;
+  reviso_historial?: boolean | null;
+  reviso_kardex?: boolean | null;
   turno?: Turno;
   tipo_certificado?: TipoCertificado;
   generacion?: string | null;
@@ -177,9 +185,17 @@ const DEFAULT_MOCK_ALUMNOS: Alumno[] = [
     id: "al-8240-001",
     numeroCuenta: "20210041",
     nombre: "LÓPEZ HERNÁNDEZ JUAN CARLOS",
+    curp: "LOHJ050910HSLRRLA3",
+    folioRecibo: "14495580",
+    cicloRecibo: "2025-2026",
     preparatoriaClave: "8240",
     preparatoriaNombre: "Preparatoria Mazatlán",
     modalidad: "Escolarizada",
+    carreraCodigo: 1,
+    planEstudio: "18",
+    microfilm: "824020210041",
+    revisoHistorial: true,
+    revisoKardex: true,
     turno: "Matutino",
     tipoCertificado: "Digital",
     tramite: "Certificado",
@@ -206,9 +222,17 @@ const DEFAULT_MOCK_ALUMNOS: Alumno[] = [
     id: "al-8210-002",
     numeroCuenta: "20210152",
     nombre: "SÁNCHEZ MORALES DANIELA",
+    curp: "SAMD060408MSLLLNA7",
+    folioRecibo: "15099342",
+    cicloRecibo: "2025-2026",
     preparatoriaClave: "8210",
     preparatoriaNombre: "Preparatoria Concordia",
     modalidad: "Semiescolarizada",
+    carreraCodigo: 2,
+    planEstudio: "23",
+    microfilm: "2182100086",
+    revisoHistorial: true,
+    revisoKardex: true,
     turno: "Mixto",
     tipoCertificado: "Físico",
     tramite: "Certificado",
@@ -235,9 +259,17 @@ const DEFAULT_MOCK_ALUMNOS: Alumno[] = [
     id: "al-8260-003",
     numeroCuenta: "20210389",
     nombre: "RAMÍREZ TORRES JESÚS ALBERTO",
+    curp: "RATJ051206HSLSZGA2",
+    folioRecibo: "15088153",
+    cicloRecibo: "2025-2026",
     preparatoriaClave: "8260",
     preparatoriaNombre: "Preparatoria Rubén Jaramillo",
     modalidad: "Nocturno",
+    carreraCodigo: 3,
+    planEstudio: "14",
+    microfilm: "2282600277",
+    revisoHistorial: true,
+    revisoKardex: true,
     turno: "Nocturno",
     tipoCertificado: "Físico",
     tramite: "Certificado",
@@ -264,9 +296,17 @@ const DEFAULT_MOCK_ALUMNOS: Alumno[] = [
     id: "al-8220-004",
     numeroCuenta: "20210415",
     nombre: "GARCÍA VEGA SOFÍA VALENTINA",
+    curp: "GAVS060801MSLNLLA9",
+    folioRecibo: "15104951",
+    cicloRecibo: "2025-2026",
     preparatoriaClave: "8220",
     preparatoriaNombre: "Preparatoria El Rosario",
     modalidad: "Escolarizada",
+    carreraCodigo: 1,
+    planEstudio: "18",
+    microfilm: "822020210415",
+    revisoHistorial: true,
+    revisoKardex: true,
     turno: "Vespertino",
     tipoCertificado: "Digital",
     tramite: "Certificado",
@@ -293,9 +333,17 @@ const DEFAULT_MOCK_ALUMNOS: Alumno[] = [
     id: "al-8230-005",
     numeroCuenta: "20210567",
     nombre: "BELTRÁN OSUNA CARLOS MANUEL",
+    curp: "BEOC050710HSLRRSA6",
+    folioRecibo: "15119313",
+    cicloRecibo: "2025-2026",
     preparatoriaClave: "8230",
     preparatoriaNombre: "Preparatoria Escuinapa",
     modalidad: "Escolarizada",
+    carreraCodigo: 1,
+    planEstudio: "15",
+    microfilm: "823020210567",
+    revisoHistorial: true,
+    revisoKardex: true,
     turno: "Matutino",
     tipoCertificado: "Físico",
     tramite: "Certificado",
@@ -486,13 +534,24 @@ export async function updateCostoBase(nuevoCosto: number): Promise<void> {
 
 function mapSolicitud(row: SolicitudDetalleRow, catalogos: Catalogos): Alumno {
   const prepa = catalogos.preparatorias.find(p => p.clave === row.preparatoria_clave);
+  const mes = Number(row.periodo_mes ?? row.mes ?? (new Date().getMonth() + 1));
+  const anio = Number(row.periodo_anio ?? row.anio ?? new Date().getFullYear());
+  const modalidad = row.modalidad || "Escolarizada";
   return {
     id: row.id,
     numeroCuenta: row.numero_cuenta || row.matricula || "",
     nombre: row.alumno_nombre || row.nombre || "",
+    curp: row.curp ?? "",
+    folioRecibo: row.folio_recibo ?? row.folio ?? "",
+    cicloRecibo: row.ciclo_recibo || getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(mes, anio)),
     preparatoriaClave: row.preparatoria_clave || "",
     preparatoriaNombre: row.preparatoria_nombre || prepa?.nombre || row.preparatoria_clave || "",
-    modalidad: row.modalidad || "Escolarizada",
+    modalidad,
+    carreraCodigo: row.carrera_codigo ?? getDefaultCarreraCodigo(modalidad),
+    planEstudio: row.plan_estudio ?? "18",
+    microfilm: row.microfilm ?? "",
+    revisoHistorial: row.reviso_historial ?? true,
+    revisoKardex: row.reviso_kardex ?? true,
     turno: row.turno || "Matutino",
     tipoCertificado: row.tipo_certificado || "Físico",
     tramite: row.tramite || "Certificado",
@@ -512,9 +571,60 @@ function mapSolicitud(row: SolicitudDetalleRow, catalogos: Catalogos): Alumno {
     localizacion: row.localizacion ?? "",
     observaciones: row.observaciones ?? "",
     estado: row.estado,
-    mes: Number(row.periodo_mes ?? row.mes ?? (new Date().getMonth() + 1)),
-    anio: Number(row.periodo_anio ?? row.anio ?? new Date().getFullYear()),
+    mes,
+    anio,
   };
+}
+
+function buildSolicitudBasePayload(alumno: Alumno): Record<string, unknown> {
+  return {
+    alumno_nombre: alumno.nombre.trim(),
+    alumno_email: alumno.email?.trim() || null,
+    telefono: alumno.telefono?.trim() || null,
+    telefono_alternativo: alumno.telefonoAlt?.trim() || null,
+    numero_cuenta: alumno.numeroCuenta.trim(),
+    tramite_id: alumno.tramiteId ?? "certificado",
+    preparatoria_clave: alumno.preparatoriaClave,
+    modalidad: alumno.modalidad,
+    turno: alumno.turno,
+    tipo_certificado: alumno.tipoCertificado,
+    pago_mxn: alumno.pago,
+    generacion: alumno.generacion.trim() || null,
+    fecha_documentos_recibidos: toIsoDate(alumno.recibio),
+    fecha_ingreso_sistema: toIsoDate(alumno.ingreso),
+    fecha_recepcion_fisica: toIsoDate(alumno.recibido),
+    fecha_envio: toIsoDate(alumno.envio),
+    reenvio: alumno.reenvio,
+    carta_poder: alumno.cartaPoder?.trim() || null,
+    carta_porte: alumno.cartaPorte?.trim() || null,
+    localizacion: alumno.localizacion?.trim() || null,
+    observaciones: alumno.observaciones?.trim() || null,
+    estado: alumno.estado,
+    periodo_mes: alumno.mes,
+    periodo_anio: alumno.anio,
+  };
+}
+
+function buildSolicitudExtendedPayload(alumno: Alumno): Record<string, unknown> {
+  return {
+    ...buildSolicitudBasePayload(alumno),
+    curp: alumno.curp?.trim().toUpperCase() || null,
+    folio_recibo: alumno.folioRecibo?.trim() || null,
+    ciclo_recibo: alumno.cicloRecibo?.trim() || null,
+    carrera_codigo: alumno.carreraCodigo !== undefined && String(alumno.carreraCodigo).trim() !== ""
+      ? String(alumno.carreraCodigo).trim()
+      : String(getDefaultCarreraCodigo(alumno.modalidad)),
+    plan_estudio: alumno.planEstudio?.trim() || "18",
+    microfilm: alumno.microfilm?.trim().toUpperCase() || null,
+    reviso_historial: alumno.revisoHistorial ?? true,
+    reviso_kardex: alumno.revisoKardex ?? true,
+  };
+}
+
+function isMissingColumnError(error: SupabaseDbError | null): boolean {
+  if (!error) return false;
+  const msg = `${error.code ?? ""} ${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return error.code === "42703" || error.code === "PGRST204" || msg.includes("column") || msg.includes("schema cache");
 }
 
 export async function fetchAlumnos(catalogos: Catalogos): Promise<Alumno[]> {
@@ -549,44 +659,27 @@ export async function createAlumno(alumno: Alumno, catalogos: Catalogos): Promis
     return newAlumno;
   }
 
-  const payload: Record<string, unknown> = {
-    alumno_nombre: alumno.nombre.trim(),
-    alumno_email: alumno.email?.trim() || null,
-    telefono: alumno.telefono?.trim() || null,
-    telefono_alternativo: alumno.telefonoAlt?.trim() || null,
-    numero_cuenta: alumno.numeroCuenta.trim(),
-    tramite_id: alumno.tramiteId ?? "certificado",
-    preparatoria_clave: alumno.preparatoriaClave,
-    modalidad: alumno.modalidad,
-    turno: alumno.turno,
-    tipo_certificado: alumno.tipoCertificado,
-    pago_mxn: alumno.pago,
-    generacion: alumno.generacion.trim() || null,
-    fecha_documentos_recibidos: toIsoDate(alumno.recibio),
-    fecha_ingreso_sistema: toIsoDate(alumno.ingreso),
-    fecha_recepcion_fisica: toIsoDate(alumno.recibido),
-    fecha_envio: toIsoDate(alumno.envio),
-    reenvio: alumno.reenvio,
-    carta_poder: alumno.cartaPoder?.trim() || null,
-    carta_porte: alumno.cartaPorte?.trim() || null,
-    localizacion: alumno.localizacion?.trim() || null,
-    observaciones: alumno.observaciones?.trim() || null,
-    estado: alumno.estado,
-    periodo_mes: alumno.mes,
-    periodo_anio: alumno.anio,
-  };
-
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("solicitudes_titulacion")
-    .insert(payload)
+    .insert(buildSolicitudExtendedPayload(alumno))
     .select("id")
     .single<{ id: string }>();
+
+  if (error && isMissingColumnError(error)) {
+    const retry = await supabase
+      .from("solicitudes_titulacion")
+      .insert(buildSolicitudBasePayload(alumno))
+      .select("id")
+      .single<{ id: string }>();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) throw error;
 
   const next = await fetchAlumnos(catalogos);
-  const created = next.find(item => item.id === data.id);
-  return created ?? alumno;
+  const created = next.find(item => item.id === data?.id);
+  return created ? { ...alumno, ...created, curp: created.curp || alumno.curp, folioRecibo: created.folioRecibo || alumno.folioRecibo, cicloRecibo: created.cicloRecibo || alumno.cicloRecibo, carreraCodigo: created.carreraCodigo ?? alumno.carreraCodigo, planEstudio: created.planEstudio || alumno.planEstudio, microfilm: created.microfilm || alumno.microfilm } : alumno;
 }
 
 export async function updateAlumno(alumno: Alumno, catalogos: Catalogos): Promise<Alumno> {
@@ -600,43 +693,24 @@ export async function updateAlumno(alumno: Alumno, catalogos: Catalogos): Promis
     return alumno;
   }
 
-  const payload: Record<string, unknown> = {
-    alumno_nombre: alumno.nombre.trim(),
-    alumno_email: alumno.email?.trim() || null,
-    telefono: alumno.telefono?.trim() || null,
-    telefono_alternativo: alumno.telefonoAlt?.trim() || null,
-    numero_cuenta: alumno.numeroCuenta.trim(),
-    tramite_id: alumno.tramiteId ?? "certificado",
-    preparatoria_clave: alumno.preparatoriaClave,
-    modalidad: alumno.modalidad,
-    turno: alumno.turno,
-    tipo_certificado: alumno.tipoCertificado,
-    pago_mxn: alumno.pago,
-    generacion: alumno.generacion.trim() || null,
-    fecha_documentos_recibidos: toIsoDate(alumno.recibio),
-    fecha_ingreso_sistema: toIsoDate(alumno.ingreso),
-    fecha_recepcion_fisica: toIsoDate(alumno.recibido),
-    fecha_envio: toIsoDate(alumno.envio),
-    reenvio: alumno.reenvio,
-    carta_poder: alumno.cartaPoder?.trim() || null,
-    carta_porte: alumno.cartaPorte?.trim() || null,
-    localizacion: alumno.localizacion?.trim() || null,
-    observaciones: alumno.observaciones?.trim() || null,
-    estado: alumno.estado,
-    periodo_mes: alumno.mes,
-    periodo_anio: alumno.anio,
-  };
-
-  const { error } = await supabase
+  let { error } = await supabase
     .from("solicitudes_titulacion")
-    .update(payload)
+    .update(buildSolicitudExtendedPayload(alumno))
     .eq("id", alumno.id);
+
+  if (error && isMissingColumnError(error)) {
+    const retry = await supabase
+      .from("solicitudes_titulacion")
+      .update(buildSolicitudBasePayload(alumno))
+      .eq("id", alumno.id);
+    error = retry.error;
+  }
 
   if (error) throw error;
 
   const next = await fetchAlumnos(catalogos);
   const updated = next.find(item => item.id === alumno.id);
-  return updated ?? alumno;
+  return updated ? { ...alumno, ...updated, curp: updated.curp || alumno.curp, folioRecibo: updated.folioRecibo || alumno.folioRecibo, cicloRecibo: updated.cicloRecibo || alumno.cicloRecibo, carreraCodigo: updated.carreraCodigo ?? alumno.carreraCodigo, planEstudio: updated.planEstudio || alumno.planEstudio, microfilm: updated.microfilm || alumno.microfilm } : alumno;
 }
 
 export async function updateAlumnosBulk(ids: string[], changes: AlumnoBulkChanges): Promise<string[]> {
