@@ -1,12 +1,14 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 type AppRole = "admin" | "operador";
+type AccesoDivision = "bachillerato" | "licenciatura" | "ambas";
 
 type ProfileRow = {
   id: string;
   email: string | null;
   display_name: string;
   role: "admin" | "operador" | "consulta";
+  division?: AccesoDivision;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -36,6 +38,13 @@ function readEnv(name: string) {
 
 function isValidRole(value: unknown): value is AppRole {
   return value === "admin" || value === "operador";
+}
+
+function normalizeDivision(value: unknown, role: AppRole): AccesoDivision {
+  if (value === "bachillerato" || value === "licenciatura" || value === "ambas") {
+    return value;
+  }
+  return role === "admin" ? "ambas" : "bachillerato";
 }
 
 Deno.serve(async req => {
@@ -84,6 +93,7 @@ Deno.serve(async req => {
       email?: unknown;
       displayName?: unknown;
       role?: unknown;
+      division?: unknown;
     } | null;
 
     const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -102,6 +112,8 @@ Deno.serve(async req => {
       return jsonResponse({ error: "Rol invalido." }, 400);
     }
 
+    const division = normalizeDivision(body?.division, role);
+
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const { data: createdUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
@@ -114,17 +126,34 @@ Deno.serve(async req => {
       return jsonResponse({ error: createError?.message ?? "No se pudo crear el usuario." }, 400);
     }
 
-    const { data: profile, error: profileError } = await adminClient
+    let { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .upsert({
         id: createdUser.user.id,
         email,
         display_name: displayName,
         role,
+        division,
         active: true,
       }, { onConflict: "id" })
-      .select("id,email,display_name,role,active,created_at,updated_at")
+      .select("id,email,display_name,role,division,active,created_at,updated_at")
       .single<ProfileRow>();
+
+    if (profileError && profileError.message?.toLowerCase().includes("division")) {
+      const fallback = await adminClient
+        .from("profiles")
+        .upsert({
+          id: createdUser.user.id,
+          email,
+          display_name: displayName,
+          role,
+          active: true,
+        }, { onConflict: "id" })
+        .select("id,email,display_name,role,active,created_at,updated_at")
+        .single<ProfileRow>();
+      profile = fallback.data;
+      profileError = fallback.error;
+    }
 
     if (profileError) {
       return jsonResponse({ error: profileError.message }, 400);

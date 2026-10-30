@@ -7,7 +7,9 @@ import reporteProductividadTemplateUrl from "../../FORMATO REPORTE DE PRODUCTIVI
 
 // -- Types ----------------------------------------------------------------------
 
-export type ModalidadPrepa = "Escolarizada" | "Semiescolarizada" | "Nocturno";
+export type DivisionAcademica = "bachillerato" | "licenciatura";
+export type AccesoDivision = "bachillerato" | "licenciatura" | "ambas";
+export type ModalidadPrepa = "Escolarizada" | "Semiescolarizada" | "Nocturno" | (string & {});
 export type TipoCertificado = "Físico" | "Digital";
 export type Turno = "Matutino" | "Vespertino" | "Nocturno" | "Mixto";
 export type EstadoTramite = "pendiente" | "recibido" | "enviado" | "aceptado" | "rechazado";
@@ -20,6 +22,7 @@ export interface Account {
   email: string;
   password: string;
   role?: "admin" | "operador" | "consulta";
+  division?: AccesoDivision;
 }
 
 export type ManagedRole = "admin" | "operador" | "consulta";
@@ -29,6 +32,7 @@ export interface ManagedProfile {
   email: string;
   displayName: string;
   role: ManagedRole;
+  division: AccesoDivision;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -53,10 +57,10 @@ export interface Alumno {
   curp?: string;                   // 18 caracteres CURP
   folioRecibo?: string;            // Folio del recibo de pago
   cicloRecibo?: string;            // Ciclo del recibo (ej. "2025-2026" o "2025")
-  preparatoriaClave: string;       // ej. "8210"
-  preparatoriaNombre: string;      // ej. "Preparatoria Concordia"
-  modalidad: ModalidadPrepa;       // "Escolarizada" | "Semiescolarizada" | "Nocturno"
-  carreraCodigo?: string | number; // 1 = Escolarizada, 2 = Semiescolarizada, 3 = Nocturno
+  preparatoriaClave: string;       // ej. "8210" o "4800"
+  preparatoriaNombre: string;      // ej. "Preparatoria Concordia" o "FAC. DE INFORMÁTICA MAZATLÁN"
+  modalidad: ModalidadPrepa;       // Modalidad en Bachillerato o Carrera en Licenciatura
+  carreraCodigo?: string | number; // 1 = Escolarizada, 2 = Semiescolarizada, 3 = Nocturno (o cód. carrera en Licenciatura)
   planEstudio?: string;            // Plan de estudios (ej. "18", "15", "12", "2", "1")
   microfilm?: string;              // # de Microfilm (ej. "826020230373")
   revisoHistorial?: boolean;       // Se revisó historial académico (SI/NO)
@@ -82,9 +86,32 @@ export interface Alumno {
   estado: EstadoTramite;
   mes: number;
   anio: number;
+  division?: DivisionAcademica;
 }
 
-export function getDefaultCarreraCodigo(modalidad?: ModalidadPrepa | string): number {
+export function getDivisionFromClave(clave?: string | null): DivisionAcademica {
+  const clean = (clave ?? "").trim();
+  if (!clean || clean.startsWith("82")) {
+    return "bachillerato";
+  }
+  return "licenciatura";
+}
+
+export function getDivisionLabel(division: DivisionAcademica): string {
+  return division === "licenciatura" ? "Licenciatura" : "Bachillerato";
+}
+
+export function getAccesoDivisionLabel(division?: AccesoDivision): string {
+  if (division === "licenciatura") return "Licenciatura";
+  if (division === "bachillerato") return "Bachillerato";
+  return "Ambas divisiones";
+}
+
+export function getDefaultCarreraCodigo(
+  modalidad?: ModalidadPrepa | string,
+  division: DivisionAcademica = "bachillerato"
+): number | string {
+  if (division === "licenciatura") return "";
   if (modalidad === "Semiescolarizada") return 2;
   if (modalidad === "Nocturno") return 3;
   return 1;
@@ -108,6 +135,7 @@ export interface Preparatoria {
   clave: string;
   nombre: string;
   modalidades: ModalidadPrepa[];
+  division?: DivisionAcademica;
   activo?: boolean;
 }
 
@@ -159,25 +187,209 @@ export const TURNOS: Turno[] = [
 ];
 
 export const PREPARATORIAS: Preparatoria[] = [
-  { clave: "8210", nombre: "Preparatoria Concordia", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
-  { clave: "8212", nombre: "Preparatoria Concordia Extensión Potrerillos", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
-  { clave: "8213", nombre: "Preparatoria Concordia Extensión Agua Caliente", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
-  { clave: "8215", nombre: "Preparatoria Concordia Extensión El Verde", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8220", nombre: "Preparatoria El Rosario", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8221", nombre: "Preparatoria El Rosario Extensión Agua Verde", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8222", nombre: "Preparatoria El Rosario Extensión Los Pozos", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8230", nombre: "Preparatoria Escuinapa", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
-  { clave: "8231", nombre: "Preparatoria Escuinapa Extensión Isla Del Bosque", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8232", nombre: "Preparatoria Escuinapa Extensión Teacapán", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8240", nombre: "Preparatoria Mazatlán", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8242", nombre: "Preparatoria Mazatlán Ext. La Noria", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8250", nombre: "Preparatoria Antonio Rosales", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8251", nombre: "Preparatoria Antonio Rosales Extensión Mármol", modalidades: ["Escolarizada", "Semiescolarizada"], activo: true },
-  { clave: "8260", nombre: "Preparatoria Rubén Jaramillo", modalidades: ["Escolarizada", "Nocturno"], activo: true },
-  { clave: "8261", nombre: "Preparatoria Villa Unión", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8262", nombre: "Preparatoria Rubén Jaramillo Extensión El Quelite", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8270", nombre: "Preparatoria San Ignacio", modalidades: ["Escolarizada"], activo: true },
-  { clave: "8271", nombre: "Preparatoria San Ignacio Extensión Piaxtla", modalidades: ["Escolarizada"], activo: true },
+  { clave: "8210", nombre: "Preparatoria Concordia", modalidades: ["Escolarizada", "Semiescolarizada"], division: "bachillerato", activo: true },
+  { clave: "8212", nombre: "Preparatoria Concordia Extensión Potrerillos", modalidades: ["Escolarizada", "Semiescolarizada"], division: "bachillerato", activo: true },
+  { clave: "8213", nombre: "Preparatoria Concordia Extensión Agua Caliente", modalidades: ["Escolarizada", "Semiescolarizada"], division: "bachillerato", activo: true },
+  { clave: "8215", nombre: "Preparatoria Concordia Extensión El Verde", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8220", nombre: "Preparatoria El Rosario", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8221", nombre: "Preparatoria El Rosario Extensión Agua Verde", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8222", nombre: "Preparatoria El Rosario Extensión Los Pozos", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8230", nombre: "Preparatoria Escuinapa", modalidades: ["Escolarizada", "Semiescolarizada"], division: "bachillerato", activo: true },
+  { clave: "8231", nombre: "Preparatoria Escuinapa Extensión Isla Del Bosque", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8232", nombre: "Preparatoria Escuinapa Extensión Teacapán", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8240", nombre: "Preparatoria Mazatlán", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8242", nombre: "Preparatoria Mazatlán Ext. La Noria", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8250", nombre: "Preparatoria Antonio Rosales", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8251", nombre: "Preparatoria Antonio Rosales Extensión Mármol", modalidades: ["Escolarizada", "Semiescolarizada"], division: "bachillerato", activo: true },
+  { clave: "8260", nombre: "Preparatoria Rubén Jaramillo", modalidades: ["Escolarizada", "Nocturno"], division: "bachillerato", activo: true },
+  { clave: "8261", nombre: "Preparatoria Villa Unión", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8262", nombre: "Preparatoria Rubén Jaramillo Extensión El Quelite", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8270", nombre: "Preparatoria San Ignacio", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+  { clave: "8271", nombre: "Preparatoria San Ignacio Extensión Piaxtla", modalidades: ["Escolarizada"], division: "bachillerato", activo: true },
+];
+
+export const FACULTADES_LICENCIATURA: Preparatoria[] = [
+  {
+    clave: "2206",
+    nombre: "FAC. DE MEDICINA (EXT. MAZATLÁN)",
+    division: "licenciatura",
+    modalidades: ["MÉDICO GENERAL"],
+    activo: true,
+  },
+  {
+    clave: "4500",
+    nombre: "FAC. DE CIENCIAS SOCIALES MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN CIENCIAS DE LA COMUNICACIÓN",
+      "LICENCIATURA EN COMERCIO INTERNACIONAL",
+      "LICENCIATURA EN ECONOMÍA",
+      "LICENCIATURA EN SOCIOLOGÍA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4510",
+    nombre: "FAC. DE CIENCIAS ECONÓMICO ADMINISTRATIVAS DE MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN ADMINISTRACIÓN DE EMPRESAS",
+      "LICENCIATURA EN ADMINISTRACIÓN DE RECURSOS HUMANOS",
+      "LICENCIATURA EN CONTADURÍA PÚBLICA",
+      "LICENCIATURA EN MERCADOTECNIA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4520",
+    nombre: "FAC. DE DERECHO MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN CRIMINALÍSTICA Y CIENCIAS FORENSES",
+      "LICENCIATURA EN DERECHO",
+      "LICENCIATURA EN DERECHO MODALIDAD SEMIESCOLARIZADA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4530",
+    nombre: "FAC. DE PSICOLOGÍA MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN PSICOLOGÍA",
+      "LICENCIATURA EN PSICOLOGÍA SEMIESCOLARIZADA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4540",
+    nombre: "UA DE GASTRONOMÍA Y NUTRICIÓN MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN GASTRONOMÍA",
+      "LICENCIATURA EN NUTRICIÓN",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4550",
+    nombre: "FAC. DE ARQUITECTURA Y DISEÑO INDUSTRIAL",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN ARQUITECTURA",
+      "LICENCIATURA EN DISEÑO INDUSTRIAL",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4560",
+    nombre: "UA DE EDUCACIÓN FÍSICA Y DEPORTE MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN EDUCACIÓN FÍSICA",
+      "LICENCIATURA EN EDUCACIÓN DEPORTIVA (SEMIESCOLARIZADA)",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4570",
+    nombre: "UA DE CIENCIAS DE LA EDUCACIÓN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN CIENCIAS DE LA EDUCACIÓN",
+      "LICENCIATURA EN CIENCIAS DE LA EDUCACIÓN SEMIESCOLARIZADA",
+      "LICENCIATURA EN EDUCACIÓN MEDIA EN EL AREA DE ESPAÑOL",
+      "LICENCIATURA EN EDUCACIÓN MEDIA EN EL ÁREA DE ESPAÑOL, MODALIDAD SEMIESCOLARIZADA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4610",
+    nombre: "ESCUELA DE TURISMO MAZATLÁN",
+    division: "licenciatura",
+    modalidades: ["LICENCIATURA EN TURISMO"],
+    activo: true,
+  },
+  {
+    clave: "4700",
+    nombre: "FAC. DE INGENIERÍA Y TECNOLOGÍA DE MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN INGENIERÍA CIVIL",
+      "LICENCIATURA EN INGENIERIA EN ENERGÍAS RENOVABLES",
+      "LICENCIATURA EN INGENIERÍA EN PROCESOS INDUSTRIALES",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4800",
+    nombre: "FAC. DE INFORMÁTICA MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN INFORMÁTICA",
+      "LICENCIATURA EN INGENIERÍA EN SISTEMAS DE INFORMACIÓN",
+      "LICENCIATURA EN INGENIERÍA EN SISTEMAS DE INFORMACIÓN (MODALIDAD VIRTUAL)",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4900",
+    nombre: "FAC. DE CIENCIAS DEL MAR",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN BIOLOGÍA ACUÍCOLA",
+      "LICENCIATURA EN BIOLOGÍA PESQUERA",
+      "LICENCIATURA EN GESTIÓN DE ZONA COSTERA",
+      "LICENCIATURA EN INGENIERÍA BIOTECNOLOGÍA ACUÁTICA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "4920",
+    nombre: "CENTRO DE ESTUDIOS SUPERIORES DE EL ROSARIO",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN ADMINISTRACIÓN DE EMPRESAS",
+      "LICENCIATURA EN INGENIERÍA AGRONÓMICA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "5810",
+    nombre: "FAC. DE TRABAJO SOCIAL MAZATLÁN",
+    division: "licenciatura",
+    modalidades: [
+      "LICENCIATURA EN TRABAJO SOCIAL",
+      "LICENCIATURA EN TRABAJO SOCIAL SEMIESCOLARIZADA",
+    ],
+    activo: true,
+  },
+  {
+    clave: "5820",
+    nombre: "FAC. DE ENFERMERÍA MAZATLÁN",
+    division: "licenciatura",
+    modalidades: ["LICENCIATURA EN ENFERMERÍA"],
+    activo: true,
+  },
+  {
+    clave: "9054",
+    nombre: "UA DE ARTES EXTENSIÓN MAZATLÁN",
+    division: "licenciatura",
+    modalidades: ["LICENCIATURA EN EDUCACIÓN ARTÍSTICA"],
+    activo: true,
+  },
+  {
+    clave: "9811",
+    nombre: "CENTRO DE ESTUDIOS DE IDIOMAS MAZATLÁN",
+    division: "licenciatura",
+    modalidades: ["LICENCIATURA EN ENSEÑANZA DEL IDIOMA INGLES"],
+    activo: true,
+  },
+];
+
+export const UNIDADES_ACADEMICAS: Preparatoria[] = [
+  ...PREPARATORIAS,
+  ...FACULTADES_LICENCIATURA,
 ];
 
 export const MESES = [
@@ -246,10 +458,16 @@ export async function exportMetricsToCSV(
   await saveCsvFile(`reporte_ingresos_${label}.csv`, csv);
 }
 
-export async function exportToCSV(alumnos: Alumno[], mes: number, anio: number) {
+export async function exportToCSV(
+  alumnos: Alumno[],
+  mes: number,
+  anio: number,
+  division: DivisionAcademica = "bachillerato"
+) {
+  const isLic = division === "licenciatura";
   const headers = [
     "No.", "No. Cuenta", "Nombre del Alumno", "CURP", "Folio Recibo", "Ciclo Recibo",
-    "Clave UA", "Preparatoria", "Modalidad", "Carrera", "Plan", "# de Microfilm",
+    "Clave UA", isLic ? "Facultad / Unidad Académica" : "Preparatoria", isLic ? "Programa / Carrera" : "Modalidad", "Carrera (Cód.)", "Plan", "# de Microfilm",
     "Revisó Historial", "Revisó Kárdex", "Turno", "Tipo Certificado", "Generación",
     "Costo ($)", "Teléfono", "Tel. Alternativo", "E-Mail",
     "Ingreso", "Recibido", "Envío", "Reenvío", "Carta Poder", "Estado",
@@ -264,7 +482,9 @@ export async function exportToCSV(alumnos: Alumno[], mes: number, anio: number) 
     a.preparatoriaClave,
     a.preparatoriaNombre,
     a.modalidad,
-    a.carreraCodigo ?? getDefaultCarreraCodigo(a.modalidad),
+    a.carreraCodigo !== undefined && String(a.carreraCodigo).trim() !== ""
+      ? a.carreraCodigo
+      : (isLic ? a.modalidad : getDefaultCarreraCodigo(a.modalidad, division)),
     a.planEstudio ?? "18",
     a.microfilm ?? "",
     a.revisoHistorial === false ? "NO" : "SI",
@@ -286,7 +506,7 @@ export async function exportToCSV(alumnos: Alumno[], mes: number, anio: number) 
   const csv = [headers, ...rows]
     .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
     .join("\r\n");
-  await saveCsvFile(`certificados_${MESES[mes - 1]}_${anio}.csv`, csv);
+  await saveCsvFile(`certificados_${division}_${MESES[mes - 1]}_${anio}.csv`, csv);
 }
 
 type ExcelCellStyle = Partial<ExcelJSTypes.Style>;
@@ -522,23 +742,32 @@ function copyWorksheetTemplate(
   return target;
 }
 
-const LOCAL_STORAGE_FOLIO_CORTE = "app_ultimo_folio_corte";
+const LOCAL_STORAGE_FOLIO_CORTE_BACHILLERATO = "app_ultimo_folio_corte";
+const LOCAL_STORAGE_FOLIO_CORTE_LICENCIATURA = "app_licenciatura_ultimo_folio_corte";
 
-export function loadSavedFolioCorte(): string {
-  if (typeof window === "undefined") return "09";
-  const raw = (window.localStorage.getItem(LOCAL_STORAGE_FOLIO_CORTE) ?? "").trim();
-  return raw || "09";
+function getFolioStorageKey(division: DivisionAcademica = "bachillerato"): string {
+  return division === "licenciatura"
+    ? LOCAL_STORAGE_FOLIO_CORTE_LICENCIATURA
+    : LOCAL_STORAGE_FOLIO_CORTE_BACHILLERATO;
 }
 
-export function saveFolioCorteToLocal(folio: string): void {
+export function loadSavedFolioCorte(division: DivisionAcademica = "bachillerato"): string {
+  const fallback = division === "licenciatura" ? "01" : "09";
+  if (typeof window === "undefined") return fallback;
+  const raw = (window.localStorage.getItem(getFolioStorageKey(division)) ?? "").trim();
+  return raw || fallback;
+}
+
+export function saveFolioCorteToLocal(folio: string, division: DivisionAcademica = "bachillerato"): void {
   if (typeof window !== "undefined" && folio.trim()) {
-    window.localStorage.setItem(LOCAL_STORAGE_FOLIO_CORTE, folio.trim());
+    window.localStorage.setItem(getFolioStorageKey(division), folio.trim());
   }
 }
 
-function normalizeFolioCorte(folio?: string): string {
-  const clean = (folio ?? loadSavedFolioCorte()).trim();
-  if (!clean) return "09";
+function normalizeFolioCorte(folio?: string, division: DivisionAcademica = "bachillerato"): string {
+  const fallback = division === "licenciatura" ? "01" : "09";
+  const clean = (folio ?? loadSavedFolioCorte(division)).trim();
+  if (!clean) return fallback;
   return /^\d+$/.test(clean) ? clean.padStart(2, "0") : clean.toUpperCase();
 }
 
@@ -567,8 +796,15 @@ function fillFormatoControlSheet(
   pageIndex: number,
   totalPages: number,
   generatedAt: Date,
-  folioCorte: string
+  folioCorte: string,
+  division: DivisionAcademica
 ) {
+  // L2:N2 título del corte por división (Bachillerato vs Licenciatura)
+  sheet.getCell("L2").value =
+    division === "licenciatura"
+      ? "RELACIÓN DE CERTIFICADOS DE NIVEL LICENCIATURA"
+      : "RELACIÓN DE CERTIFICADOS DE NIVEL BACHILLERATO";
+
   // M5: Fecha del corte, N5: FOLIO: XX
   const dateCell = sheet.getCell("M5");
   dateCell.value = new Date(Date.UTC(generatedAt.getFullYear(), generatedAt.getMonth(), generatedAt.getDate()));
@@ -589,9 +825,13 @@ function fillFormatoControlSheet(
     const cuentaSinGuion = (alumno.numeroCuenta || "").replace(/\D/g, "");
     const cicloFallback = getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(alumno.mes, alumno.anio));
     const cicloRecibo = (alumno.cicloRecibo || cicloFallback).trim();
-    const carreraVal = alumno.carreraCodigo !== undefined && String(alumno.carreraCodigo).trim() !== ""
+    const hasCustomCarreraCodigo =
+      alumno.carreraCodigo !== undefined && String(alumno.carreraCodigo).trim() !== "";
+    const carreraVal = hasCustomCarreraCodigo
       ? alumno.carreraCodigo
-      : getDefaultCarreraCodigo(alumno.modalidad);
+      : division === "licenciatura"
+      ? (alumno.modalidad || "").trim().toUpperCase()
+      : getDefaultCarreraCodigo(alumno.modalidad, division);
     const planVal = (alumno.planEstudio ?? "").trim() || "18";
 
     row.getCell(2).value = numeroFila;                                                          // B: NUM. (1..20)
@@ -610,7 +850,11 @@ function fillFormatoControlSheet(
   }
 }
 
-export async function exportFormatoControlSolicitudesXlsx(alumnos: Alumno[], folioInput?: string) {
+export async function exportFormatoControlSolicitudesXlsx(
+  alumnos: Alumno[],
+  folioInput?: string,
+  division: DivisionAcademica = "bachillerato"
+) {
   const ExcelJS = (await import("exceljs")).default;
   const response = await fetch(formatoControlSolicitudesTemplateUrl);
   if (!response.ok) throw new Error("No se pudo cargar la plantilla de corte de certificados.");
@@ -621,8 +865,8 @@ export async function exportFormatoControlSolicitudesXlsx(alumnos: Alumno[], fol
   const templateSheet = workbook.worksheets[0];
   if (!templateSheet) throw new Error("La plantilla de corte no contiene una hoja válida.");
 
-  const folioCorte = normalizeFolioCorte(folioInput);
-  saveFolioCorteToLocal(folioCorte);
+  const folioCorte = normalizeFolioCorte(folioInput, division);
+  saveFolioCorteToLocal(folioCorte, division);
 
   const ordered = [...alumnos];
   const totalPages = Math.max(1, Math.ceil(ordered.length / CONTROL_SOLICITUDES_ROWS_PER_PAGE));
@@ -637,14 +881,15 @@ export async function exportFormatoControlSolicitudesXlsx(alumnos: Alumno[], fol
   sheets.forEach((sheet, pageIndex) => {
     const start = pageIndex * CONTROL_SOLICITUDES_ROWS_PER_PAGE;
     const pageAlumnos = ordered.slice(start, start + CONTROL_SOLICITUDES_ROWS_PER_PAGE);
-    fillFormatoControlSheet(sheet, pageAlumnos, pageIndex, totalPages, generatedAt, folioCorte);
+    fillFormatoControlSheet(sheet, pageAlumnos, pageIndex, totalPages, generatedAt, folioCorte, division);
   });
 
+  const nivelArchivo = division === "licenciatura" ? "LICENCIATURA" : "BACHILLERATO";
   const dayStr = String(generatedAt.getDate()).padStart(2, "0");
   const monthStr = String(generatedAt.getMonth() + 1).padStart(2, "0");
   const buffer = await workbook.xlsx.writeBuffer();
   await saveXlsxFile(
-    `${folioCorte} CORTE CERTIFICADOS BACHILLERATO URS ${dayStr}-${monthStr}.xlsx`,
+    `${folioCorte} CORTE CERTIFICADOS ${nivelArchivo} URS ${dayStr}-${monthStr}.xlsx`,
     new Uint8Array(buffer as ArrayBuffer)
   );
 }
@@ -1016,8 +1261,9 @@ function writeProductividadMainSheet(
 function writeProductividadMensualSheet(
   sheet: ExcelJSTypes.Worksheet,
   alumnosCiclo: Alumno[],
-  _catalogos: Catalogos,
-  cicloAnioFin: number
+  catalogos: Catalogos,
+  cicloAnioFin: number,
+  division: DivisionAcademica = "bachillerato"
 ) {
   const fullCycleLabel = getCicloEscolarLabel(cicloAnioFin);
   const shortCycleLabel = getShortCycleLabel(cicloAnioFin);
@@ -1042,8 +1288,17 @@ function writeProductividadMensualSheet(
 
   clearRowsFrom(sheet, PRODUCTIVIDAD_FIRST_DATA_ROW);
 
+  const modalidadesList = division === "licenciatura"
+    ? Array.from(
+        new Set([
+          ...catalogos.preparatorias.flatMap(p => p.modalidades || []),
+          ...alumnosCiclo.map(a => a.modalidad).filter(Boolean),
+        ])
+      )
+    : MODALIDADES;
+
   let rowNumber = PRODUCTIVIDAD_FIRST_DATA_ROW;
-  MODALIDADES.forEach(mod => {
+  modalidadesList.forEach(mod => {
     const row = sheet.getRow(rowNumber);
     applyReportRowBase(row, PRODUCTIVIDAD_MENSUAL_LAST_COLUMN);
     row.getCell(1).value = mod;
@@ -1092,7 +1347,8 @@ function writeProductividadMensualSheet(
 export async function exportReporteProductividadTituloXlsx(
   alumnos: Alumno[],
   catalogos: Catalogos,
-  cicloAnioFin: number
+  cicloAnioFin: number,
+  division: DivisionAcademica = "bachillerato"
 ) {
   const ExcelJS = (await import("exceljs")).default;
   const response = await fetch(reporteProductividadTemplateUrl);
@@ -1110,16 +1366,20 @@ export async function exportReporteProductividadTituloXlsx(
   );
 
   writeProductividadMainSheet(mainSheet, alumnosCiclo, catalogos, cicloAnioFin);
-  writeProductividadMensualSheet(monthlySheet, alumnosCiclo, catalogos, cicloAnioFin);
+  writeProductividadMensualSheet(monthlySheet, alumnosCiclo, catalogos, cicloAnioFin, division);
 
   const buffer = await workbook.xlsx.writeBuffer();
   await saveXlsxFile(
-    `reporte_productividad_certificados_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
+    `reporte_productividad_certificados_${division}_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
     new Uint8Array(buffer as ArrayBuffer)
   );
 }
 
-export async function exportTramiteTituloXlsx(alumnos: Alumno[], cicloAnioFin: number) {
+export async function exportTramiteTituloXlsx(
+  alumnos: Alumno[],
+  cicloAnioFin: number,
+  division: DivisionAcademica = "bachillerato"
+) {
   const ExcelJS = (await import("exceljs")).default;
   const response = await fetch(tramiteTituloTemplateUrl);
   if (!response.ok) throw new Error("No se pudo cargar la plantilla del formato Excel.");
@@ -1180,7 +1440,7 @@ export async function exportTramiteTituloXlsx(alumnos: Alumno[], cicloAnioFin: n
 
   const buffer = await workbook.xlsx.writeBuffer();
   await saveXlsxFile(
-    `certificados_ciclo_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
+    `certificados_${division}_ciclo_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
     new Uint8Array(buffer as ArrayBuffer)
   );
 }
