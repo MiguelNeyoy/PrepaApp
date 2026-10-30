@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { BarChart3, Check, ChevronDown, Copy, Database, ExternalLink, Eye, EyeOff, Info, LogOut, Minus, Moon, RefreshCw, Save, Settings, ShieldCheck, Square, Sun, Trash2, Users, X, Zap } from "lucide-react";
+import { BarChart3, Check, ChevronDown, Copy, Database, ExternalLink, Eye, EyeOff, GraduationCap, Info, LogOut, Minus, Moon, RefreshCw, Save, Settings, ShieldCheck, Square, Sun, Trash2, Users, X, Zap } from "lucide-react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -10,7 +10,8 @@ import { MetricasTab } from "../metricas/MetricasTab";
 import { UsuariosTab } from "../usuarios/UsuariosTab";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { isTauriRuntime } from "../../utils/window";
-import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CycleSummary, ManagedProfile, ManagedRole, Preparatoria, ThemeMode, TramiteCatalogo } from "../../domain";
+import { getAccesoDivisionLabel, getDivisionLabel } from "../../domain";
+import type { AccesoDivision, Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CycleSummary, DivisionAcademica, ManagedProfile, ManagedRole, Preparatoria, ThemeMode, TramiteCatalogo } from "../../domain";
 import { enableMockMode, isMockMode } from "../../services/supabase";
 import uasLogo from "../../../imports/uas.png";
 
@@ -663,14 +664,14 @@ export function LoginScreen({
               Sistema de<br />Certificados
             </h1>
             <p className="text-sm text-white/40 leading-relaxed max-w-xs">
-              Control y expedición de certificados de preparatoria &middot; Sector Sur.
+              Control y expedición de certificados &middot; Bachillerato y Licenciatura &middot; Sector Sur.
             </p>
 
             <div className="mt-8 space-y-2">
               {[
-                "19 Unidades Académicas y Extensiones",
-                "Certificados Físicos y Digitales",
-                "Control de Trámites y Métricas",
+                "37 Unidades Académicas y Extensiones",
+                "Nivel Bachillerato y Licenciatura",
+                "Control de Trámites, Cortes y Métricas",
               ].map(feature => (
                 <div key={feature} className="flex items-center gap-2.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400/70 flex-shrink-0" />
@@ -681,7 +682,7 @@ export function LoginScreen({
           </div>
 
           <div className="px-10 pb-8">
-            <p className="text-[10px] font-mono text-white/20">v1.0.0 &middot; 2026</p>
+            <p className="text-[10px] font-mono text-white/20">v1.1.0 &middot; 2026</p>
           </div>
         </section>
 
@@ -691,10 +692,10 @@ export function LoginScreen({
               <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">
                 Acceso al panel
               </p>
-              {isMockMode && (
+              {import.meta.env.DEV && isMockMode && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  Modo Offline
+                  Dev Mock
                 </span>
               )}
             </div>
@@ -788,28 +789,62 @@ export function LoginScreen({
                 )}
               </button>
 
-              <div className="relative my-3">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-border/70" />
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase">
-                  <span className="bg-background px-2 text-muted-foreground/70 font-medium">O prueba directa</span>
-                </div>
-              </div>
+              {import.meta.env.DEV && (
+                <>
+                  <div className="relative my-3">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-border/70" />
+                    </div>
+                    <div className="relative flex justify-center text-[10px] uppercase">
+                      <span className="bg-background px-2 text-muted-foreground/70 font-medium">Acceso rápido (Solo Dev)</span>
+                    </div>
+                  </div>
 
-              <button
-                type="button"
-                onClick={async () => {
-                  enableMockMode();
-                  setEmail("ventanilla.prepa@uas.edu.mx");
-                  setPassword("admin123");
-                  await onLogin("ventanilla.prepa@uas.edu.mx", "admin123", false);
-                }}
-                className="w-full border border-dashed border-amber-500/50 hover:border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded-lg py-2.5 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
-              >
-                <Zap className="w-4 h-4 text-amber-500" />
-                Entrar en Modo Local / Pruebas Offline
-              </button>
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        enableMockMode("ambas");
+                        setEmail("ventanilla.admin@uas.edu.mx");
+                        setPassword("123456");
+                        await onLogin("ventanilla.admin@uas.edu.mx", "123456", false);
+                      }}
+                      className="w-full border border-dashed border-amber-500/50 hover:border-amber-500 bg-amber-500/10 hover:bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded-lg py-2 text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-500" />
+                      Admin (Ambas divisiones)
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          enableMockMode("bachillerato");
+                          setEmail("ventanilla.prepa@uas.edu.mx");
+                          setPassword("123456");
+                          await onLogin("ventanilla.prepa@uas.edu.mx", "123456", false);
+                        }}
+                        className="border border-dashed border-sky-500/50 hover:border-sky-500 bg-sky-500/10 hover:bg-sky-500/15 text-sky-700 dark:text-sky-300 rounded-lg py-1.5 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        Bachillerato
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          enableMockMode("licenciatura");
+                          setEmail("ventanilla.licenciatura@uas.edu.mx");
+                          setPassword("123456");
+                          await onLogin("ventanilla.licenciatura@uas.edu.mx", "123456", false);
+                        }}
+                        className="border border-dashed border-indigo-500/50 hover:border-indigo-500 bg-indigo-500/10 hover:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 rounded-lg py-1.5 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        Licenciatura
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <p className="pt-2 text-center text-[10px] text-muted-foreground/40">
                 Acceso restringido al personal autorizado
@@ -1001,7 +1036,9 @@ function UserCard({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-xs font-bold text-foreground truncate">{account.displayName}</span>
-          <span className="block text-[10px] text-muted-foreground truncate">{account.email}</span>
+          <span className="block text-[10px] text-muted-foreground truncate">
+            {getAccesoDivisionLabel(account.division ?? (account.role === "admin" ? "ambas" : "bachillerato"))}
+          </span>
         </span>
         <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
@@ -1034,6 +1071,8 @@ export function AdminDashboard({
   alumnos,
   catalogos,
   catalogosAdmin,
+  division,
+  onDivisionChange,
   onUpdate,
   onBulkUpdate,
   onDelete,
@@ -1062,6 +1101,8 @@ export function AdminDashboard({
   alumnos: Alumno[];
   catalogos?: Catalogos;
   catalogosAdmin?: Catalogos;
+  division: DivisionAcademica;
+  onDivisionChange: (division: DivisionAcademica) => void;
   onUpdate: (a: Alumno) => Promise<void> | void;
   onBulkUpdate: (ids: string[], changes: AlumnoBulkChanges) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
@@ -1076,8 +1117,8 @@ export function AdminDashboard({
   onUpdateCostoBase?: (nuevoCosto: number) => Promise<void> | void;
   profiles: ManagedProfile[];
   cycleSummaries: CycleSummary[];
-  onCreateUser: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
-  onUpdateProfile: (id: string, changes: { displayName?: string; role?: ManagedRole; active?: boolean }) => Promise<void> | void;
+  onCreateUser: (input: { email: string; displayName: string; role: ManagedRole; division: AccesoDivision }) => Promise<void> | void;
+  onUpdateProfile: (id: string, changes: { displayName?: string; role?: ManagedRole; division?: AccesoDivision; active?: boolean }) => Promise<void> | void;
   onDeleteUser: (profile: ManagedProfile) => Promise<void> | void;
   onDeletePreviousCycle: (cicloAnioFin: number) => Promise<void> | void;
   account: Account;
@@ -1089,6 +1130,7 @@ export function AdminDashboard({
 }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const isAdmin = account.role === "admin";
+  const canSwitchDivision = isAdmin || !account.division || account.division === "ambas";
 
   useEffect(() => {
     if (!isAdmin && (tab === "usuarios" || tab === "mantenimiento")) {
@@ -1128,6 +1170,48 @@ export function AdminDashboard({
       )}
       {/* Sidebar — same bg as outer, no border, creates wrap illusion */}
       <aside className="w-52 flex-shrink-0 flex flex-col py-4 px-3">
+        {/* División Académica */}
+        <div className="mb-5 px-1">
+          <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+            División Académica
+          </p>
+          {canSwitchDivision ? (
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-secondary/70 p-1 border border-border/60">
+              <button
+                type="button"
+                onClick={() => onDivisionChange("bachillerato")}
+                className={`rounded-lg py-1.5 px-2 text-[11px] font-bold transition-all cursor-pointer ${
+                  division === "bachillerato"
+                    ? "bg-card text-amber-600 dark:text-amber-300 shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Bachillerato
+              </button>
+              <button
+                type="button"
+                onClick={() => onDivisionChange("licenciatura")}
+                className={`rounded-lg py-1.5 px-2 text-[11px] font-bold transition-all cursor-pointer ${
+                  division === "licenciatura"
+                    ? "bg-card text-indigo-600 dark:text-indigo-300 shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Licenciatura
+              </button>
+            </div>
+          ) : (
+            <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${
+              division === "licenciatura"
+                ? "border-indigo-500/20 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300"
+                : "border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-300"
+            }`}>
+              <GraduationCap className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">Nivel {getDivisionLabel(division)}</span>
+            </div>
+          )}
+        </div>
+
         {/* Nav */}
         <nav className="flex-1 space-y-5">
           {navSections.map(section => (
@@ -1170,22 +1254,24 @@ export function AdminDashboard({
             <AlumnosTab
               alumnos={alumnos}
               catalogos={catalogos}
+              division={division}
               costoBase={costoBase}
               onUpdate={onUpdate}
               onBulkUpdate={onBulkUpdate}
               onDelete={onDelete}
               onAdd={onAdd}
-              onToast={onToast}
+              onToast={(msg, variant) => onToast(variant ?? "info", msg)}
             />
           </div>
         ) : tab === "metricas" ? (
           <div className="flex-1 overflow-y-auto p-6">
-            <MetricasTab alumnos={alumnos} catalogos={catalogos} />
+            <MetricasTab alumnos={alumnos} catalogos={catalogos} division={division} />
           </div>
         ) : tab === "catalogos" ? (
           <div className="flex-1 min-h-0 p-6 flex flex-col overflow-hidden">
             <CatalogosTab
               catalogos={catalogosAdmin}
+              division={division}
               canManage={isAdmin}
               costoBase={costoBase}
               onUpdateCostoBase={onUpdateCostoBase}

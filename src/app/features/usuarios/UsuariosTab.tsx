@@ -1,11 +1,18 @@
 import React, { useMemo, useState } from "react";
-import { Pencil, Save, Search, ShieldCheck, Trash2, UserPlus, Users, X } from "lucide-react";
+import { GraduationCap, Pencil, Save, Search, ShieldCheck, Trash2, UserPlus, Users, X } from "lucide-react";
 import { CustomSelect, Field } from "../../components/controls";
-import type { Account, ManagedProfile, ManagedRole } from "../../domain";
+import { getAccesoDivisionLabel } from "../../domain";
+import type { AccesoDivision, Account, ManagedProfile, ManagedRole } from "../../domain";
 
 const ROLE_OPTIONS = [
   { label: "Admin", value: "admin" },
   { label: "Asistente", value: "operador" },
+];
+
+const DIVISION_OPTIONS = [
+  { label: "Bachillerato (Preparatorias)", value: "bachillerato" },
+  { label: "Licenciatura (Facultades)", value: "licenciatura" },
+  { label: "Ambas divisiones", value: "ambas" },
 ];
 
 function roleLabel(role: ManagedRole) {
@@ -44,6 +51,30 @@ function RoleBadge({ role }: { role: ManagedRole }) {
   );
 }
 
+function resolveProfileDivision(division?: AccesoDivision, role?: ManagedRole): AccesoDivision {
+  if (division === "bachillerato" || division === "licenciatura" || division === "ambas") {
+    return division;
+  }
+  return role === "admin" ? "ambas" : "bachillerato";
+}
+
+function DivisionBadge({ division, role }: { division?: AccesoDivision; role: ManagedRole }) {
+  const resolved = resolveProfileDivision(division, role);
+  const styleClass =
+    resolved === "licenciatura"
+      ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300"
+      : resolved === "ambas"
+        ? "bg-purple-500/10 text-purple-600 dark:text-purple-300"
+        : "bg-sky-500/10 text-sky-600 dark:text-sky-300";
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold ${styleClass}`}>
+      <GraduationCap className="h-3 w-3" />
+      {getAccesoDivisionLabel(resolved)}
+    </span>
+  );
+}
+
 function UserFormModal({
   mode,
   profile,
@@ -58,12 +89,15 @@ function UserFormModal({
   currentAccount: Account;
   profiles: ManagedProfile[];
   onClose: () => void;
-  onCreate: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
-  onUpdate: (id: string, changes: { displayName?: string; role?: ManagedRole; active?: boolean }) => Promise<void> | void;
+  onCreate: (input: { email: string; displayName: string; role: ManagedRole; division: AccesoDivision }) => Promise<void> | void;
+  onUpdate: (id: string, changes: { displayName?: string; role?: ManagedRole; division?: AccesoDivision; active?: boolean }) => Promise<void> | void;
 }) {
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
   const [email, setEmail] = useState(profile?.email ?? "");
   const [role, setRole] = useState<ManagedRole>(profile?.role === "admin" ? "admin" : "operador");
+  const [division, setDivision] = useState<AccesoDivision>(
+    resolveProfileDivision(profile?.division, profile?.role)
+  );
   const [active, setActive] = useState(profile?.active ?? true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -72,6 +106,14 @@ function UserFormModal({
   const isLastActiveAdmin = Boolean(profile && profile.role === "admin" && profile.active && activeAdminCount <= 1);
   const disablesLastAdmin = mode === "edit" && isLastActiveAdmin && (role !== "admin" || !active);
   const isCurrentUser = Boolean(profile?.id && currentAccount.id === profile.id);
+
+  const handleRoleChange = (value: string) => {
+    const nextRole = value as ManagedRole;
+    setRole(nextRole);
+    if (nextRole === "admin") {
+      setDivision("ambas");
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -95,9 +137,9 @@ function UserFormModal({
     setError("");
     try {
       if (mode === "create") {
-        await onCreate({ email: email.trim(), displayName: displayName.trim(), role });
+        await onCreate({ email: email.trim(), displayName: displayName.trim(), role, division });
       } else if (profile) {
-        await onUpdate(profile.id, { displayName: displayName.trim(), role, active });
+        await onUpdate(profile.id, { displayName: displayName.trim(), role, division, active });
       }
       onClose();
     } catch (err) {
@@ -138,29 +180,39 @@ function UserFormModal({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Rol</label>
-              <CustomSelect value={role} onChange={value => setRole(value as ManagedRole)} options={ROLE_OPTIONS} />
+              <CustomSelect value={role} onChange={handleRoleChange} options={ROLE_OPTIONS} />
             </div>
 
-            {mode === "edit" && (
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Estado</label>
-                <button
-                  type="button"
-                  onClick={() => setActive(value => !value)}
-                  className={`h-10 rounded-lg border px-3 text-sm font-semibold flex items-center justify-between transition-colors ${
-                    active
-                      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
-                      : "border-border bg-secondary/50 text-muted-foreground"
-                  }`}
-                >
-                  {active ? "Activo" : "Inactivo"}
-                  <span className={`h-5 w-9 rounded-full p-0.5 transition-colors ${active ? "bg-emerald-500" : "bg-muted-foreground/30"}`}>
-                    <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${active ? "translate-x-4" : ""}`} />
-                  </span>
-                </button>
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">División asignada</label>
+              <CustomSelect value={division} onChange={value => setDivision(value as AccesoDivision)} options={DIVISION_OPTIONS} />
+            </div>
           </div>
+
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Al iniciar sesión, este correo entrará automáticamente a la división seleccionada
+            {division === "ambas" ? " y podrá alternar entre Bachillerato y Licenciatura." : "."}
+          </p>
+
+          {mode === "edit" && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Estado</label>
+              <button
+                type="button"
+                onClick={() => setActive(value => !value)}
+                className={`h-10 rounded-lg border px-3 text-sm font-semibold flex items-center justify-between transition-colors ${
+                  active
+                    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                    : "border-border bg-secondary/50 text-muted-foreground"
+                }`}
+              >
+                {active ? "Activo" : "Inactivo"}
+                <span className={`h-5 w-9 rounded-full p-0.5 transition-colors ${active ? "bg-emerald-500" : "bg-muted-foreground/30"}`}>
+                  <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${active ? "translate-x-4" : ""}`} />
+                </span>
+              </button>
+            </div>
+          )}
 
           {mode === "create" && (
             <div className="rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
@@ -256,8 +308,8 @@ export function UsuariosTab({
 }: {
   profiles: ManagedProfile[];
   account: Account;
-  onCreateUser: (input: { email: string; displayName: string; role: ManagedRole }) => Promise<void> | void;
-  onUpdateProfile: (id: string, changes: { displayName?: string; role?: ManagedRole; active?: boolean }) => Promise<void> | void;
+  onCreateUser: (input: { email: string; displayName: string; role: ManagedRole; division: AccesoDivision }) => Promise<void> | void;
+  onUpdateProfile: (id: string, changes: { displayName?: string; role?: ManagedRole; division?: AccesoDivision; active?: boolean }) => Promise<void> | void;
   onDeleteUser: (profile: ManagedProfile) => Promise<void> | void;
 }) {
   const [query, setQuery] = useState("");
@@ -267,11 +319,15 @@ export function UsuariosTab({
   const filteredProfiles = useMemo(() => {
     const needle = normalizeText(query);
     if (!needle) return profiles;
-    return profiles.filter(profile =>
-      normalizeText(profile.displayName).includes(needle) ||
-      normalizeText(profile.email).includes(needle) ||
-      normalizeText(roleLabel(profile.role)).includes(needle)
-    );
+    return profiles.filter(profile => {
+      const divLabel = getAccesoDivisionLabel(resolveProfileDivision(profile.division, profile.role));
+      return (
+        normalizeText(profile.displayName).includes(needle) ||
+        normalizeText(profile.email).includes(needle) ||
+        normalizeText(roleLabel(profile.role)).includes(needle) ||
+        normalizeText(divLabel).includes(needle)
+      );
+    });
   }, [profiles, query]);
 
   return (
@@ -298,7 +354,7 @@ export function UsuariosTab({
       <div className="flex items-center justify-between gap-4 mb-5">
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-foreground">Usuarios</h1>
-          <p className="text-xs text-muted-foreground mt-1">Alta y administración de perfiles internos.</p>
+          <p className="text-xs text-muted-foreground mt-1">Alta y administración de perfiles internos y su división académica asignada.</p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setModal({ mode: "create" })} className="h-9 px-3 rounded-lg bg-amber-400 hover:bg-amber-500 text-white text-xs font-bold flex items-center gap-2 transition-colors">
@@ -313,17 +369,18 @@ export function UsuariosTab({
         <input
           value={query}
           onChange={event => setQuery(event.target.value)}
-          placeholder="Buscar por nombre, correo o rol"
+          placeholder="Buscar por nombre, correo, rol o división"
           className="h-8 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
         />
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-border">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[820px] text-sm">
           <thead className="sticky top-0 z-10 bg-secondary text-[10px] uppercase tracking-widest text-muted-foreground">
             <tr>
               <th className="px-4 py-3 text-left font-bold">Usuario</th>
               <th className="px-4 py-3 text-left font-bold">Rol</th>
+              <th className="px-4 py-3 text-left font-bold">División</th>
               <th className="px-4 py-3 text-left font-bold">Estado</th>
               <th className="px-4 py-3 text-right font-bold">Acción</th>
             </tr>
@@ -343,6 +400,7 @@ export function UsuariosTab({
                   </div>
                 </td>
                 <td className="px-4 py-3"><RoleBadge role={profile.role} /></td>
+                <td className="px-4 py-3"><DivisionBadge division={profile.division} role={profile.role} /></td>
                 <td className="px-4 py-3"><StatusBadge active={profile.active} /></td>
                 <td className="px-4 py-3 text-right">
                   <div className="inline-flex items-center gap-2">
@@ -366,7 +424,7 @@ export function UsuariosTab({
             ))}
             {filteredProfiles.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   No hay usuarios que coincidan con la búsqueda.
                 </td>
               </tr>
