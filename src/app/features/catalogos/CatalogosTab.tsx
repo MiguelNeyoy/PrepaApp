@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ElementType } from "react";
 import { Building2, Check, ClipboardList, DollarSign, Edit2, Edit3, Plus, Search, Trash2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { COSTO_BASE_CERTIFICADO, MODALIDADES } from "../../domain";
-import type { Catalogos, ModalidadPrepa, Preparatoria, TramiteCatalogo } from "../../domain";
+import type { Catalogos, DivisionAcademica, ModalidadPrepa, Preparatoria, TramiteCatalogo } from "../../domain";
 
 type CatalogTab = "preparatorias" | "tramites";
 type StatusFilter = "todos" | "activos" | "inactivos";
@@ -15,6 +15,7 @@ type PanelState =
 
 export function CatalogosTab({
   catalogos,
+  division = "bachillerato",
   canManage,
   costoBase = COSTO_BASE_CERTIFICADO,
   onUpdateCostoBase,
@@ -26,6 +27,7 @@ export function CatalogosTab({
   onDeleteTramite,
 }: {
   catalogos?: Catalogos;
+  division?: DivisionAcademica;
   canManage: boolean;
   costoBase?: number;
   onUpdateCostoBase?: (nuevoCosto: number) => Promise<void> | void;
@@ -36,6 +38,7 @@ export function CatalogosTab({
   onUpdateTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
   onDeleteTramite: (tramite: TramiteCatalogo) => Promise<void> | void;
 }) {
+  const isLicenciatura = division === "licenciatura";
   const [tab, setTab] = useState<CatalogTab>("preparatorias");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("todos");
@@ -43,6 +46,11 @@ export function CatalogosTab({
   const [editCostoModalOpen, setEditCostoModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setPanel(null);
+    setQuery("");
+  }, [division]);
 
   const data = catalogos ?? { preparatorias: [], tramites: [] };
   const normalizedQuery = normalize(query);
@@ -70,7 +78,13 @@ export function CatalogosTab({
       setPanel({
         tab,
         mode: "create",
-        value: { clave: "", nombre: "", modalidades: ["Escolarizada"], activo: true },
+        value: {
+          clave: "",
+          nombre: "",
+          modalidades: isLicenciatura ? [] : ["Escolarizada"],
+          activo: true,
+          division,
+        },
       });
     } else {
       setPanel({ tab, mode: "create", value: { id: "", nombre: "", activo: true } });
@@ -84,7 +98,7 @@ export function CatalogosTab({
 
   const submitPanel = async (nextValue: PanelState["value"]) => {
     if (!panel) return false;
-    const validation = validateCatalog(panel.tab, panel.mode, nextValue, data);
+    const validation = validateCatalog(panel.tab, panel.mode, nextValue, data, isLicenciatura);
     if (validation) {
       setError(validation);
       return false;
@@ -128,7 +142,12 @@ export function CatalogosTab({
   };
 
   const tabs: { id: CatalogTab; label: string; icon: ElementType; count: number }[] = [
-    { id: "preparatorias", label: "Preparatorias (Sector Sur)", icon: Building2, count: (data.preparatorias || []).length },
+    {
+      id: "preparatorias",
+      label: isLicenciatura ? "Facultades (Sector Sur)" : "Preparatorias (Sector Sur)",
+      icon: Building2,
+      count: (data.preparatorias || []).length,
+    },
     { id: "tramites", label: "Trámites", icon: ClipboardList, count: (data.tramites || []).length },
   ];
 
@@ -138,6 +157,7 @@ export function CatalogosTab({
         <SidePanel
           panel={panel}
           catalogos={data}
+          division={division}
           saving={saving}
           error={error}
           canManage={canManage}
@@ -162,9 +182,13 @@ export function CatalogosTab({
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-shrink-0">
         <div>
-          <h2 className="text-lg font-bold text-foreground tracking-tight">Catálogos de Preparatoria</h2>
+          <h2 className="text-lg font-bold text-foreground tracking-tight">
+            {isLicenciatura ? "Catálogos de Licenciatura" : "Catálogos de Preparatoria"}
+          </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Gestión de unidades académicas del Sector Sur, modalidades educativas y trámites
+            {isLicenciatura
+              ? "Gestión de facultades y escuelas del Sector Sur, carreras ofertadas y trámites"
+              : "Gestión de unidades académicas del Sector Sur, modalidades educativas y trámites"}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -192,7 +216,7 @@ export function CatalogosTab({
               className="h-9 px-4 rounded-lg bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold flex items-center gap-2 transition-colors shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
-              Nueva Preparatoria
+              {tab === "tramites" ? "Nuevo Trámite" : isLicenciatura ? "Nueva Facultad" : "Nueva Preparatoria"}
             </button>
           )}
         </div>
@@ -237,7 +261,7 @@ export function CatalogosTab({
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Buscar por clave, nombre o modalidad..."
+            placeholder={isLicenciatura ? "Buscar por clave, facultad o carrera..." : "Buscar por clave, nombre o modalidad..."}
             className="w-full h-9 bg-secondary/50 border border-border rounded-lg pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25 focus:border-amber-400/40 transition-all"
           />
         </div>
@@ -258,6 +282,7 @@ export function CatalogosTab({
           {tab === "preparatorias" && (
             <PreparatoriasTable
               rows={filtered as Preparatoria[]}
+              isLicenciatura={isLicenciatura}
               canManage={canManage}
               onEdit={openEdit}
             />
@@ -281,15 +306,25 @@ export function CatalogosTab({
 
 function PreparatoriasTable({
   rows,
+  isLicenciatura,
   canManage,
   onEdit,
 }: {
   rows: Preparatoria[];
+  isLicenciatura: boolean;
   canManage: boolean;
   onEdit: (value: Preparatoria) => void;
 }) {
   return (
-    <CatalogTable headers={["Clave", "Unidad Académica (Preparatoria)", "Programas / Modalidades", "Estado", ""]}>
+    <CatalogTable
+      headers={[
+        "Clave",
+        isLicenciatura ? "Facultad / Unidad Académica" : "Unidad Académica (Preparatoria)",
+        isLicenciatura ? "Licenciaturas / Carreras" : "Programas / Modalidades",
+        "Estado",
+        "",
+      ]}
+    >
       {rows.map(row => (
         <tr
           key={row.clave}
@@ -311,7 +346,9 @@ function PreparatoriasTable({
                 <span
                   key={m}
                   className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                    m === "Escolarizada"
+                    isLicenciatura
+                      ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-600 dark:text-indigo-300"
+                      : m === "Escolarizada"
                       ? "bg-blue-500/10 border-blue-500/20 text-blue-500"
                       : m === "Semiescolarizada"
                       ? "bg-purple-500/10 border-purple-500/20 text-purple-500"
@@ -377,6 +414,7 @@ function TramitesTable({
 
 function SidePanel({
   panel,
+  division = "bachillerato",
   saving,
   error,
   canManage,
@@ -387,6 +425,7 @@ function SidePanel({
 }: {
   panel: PanelState;
   catalogos: Catalogos;
+  division?: DivisionAcademica;
   saving: boolean;
   error: string;
   canManage: boolean;
@@ -395,18 +434,31 @@ function SidePanel({
   onSubmit: (value: PanelState["value"]) => Promise<boolean>;
   onDelete: (value: PanelState["value"]) => Promise<boolean>;
 }) {
+  const isLicenciatura = division === "licenciatura";
   const [closing, setClosing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [newCarrera, setNewCarrera] = useState("");
 
   const value = panel.value;
   const isPrepa = panel.tab === "preparatorias";
+  const unitName = isLicenciatura ? "Facultad" : "Preparatoria";
   const title = panel.mode === "create"
-    ? isPrepa ? "Nueva Preparatoria" : "Nuevo Trámite"
-    : isPrepa ? "Editar Preparatoria" : "Editar Trámite";
+    ? isPrepa ? `Nueva ${unitName}` : "Nuevo Trámite"
+    : isPrepa ? `Editar ${unitName}` : "Editar Trámite";
 
   const update = (patch: Record<string, unknown>) =>
     onChange({ ...value, ...patch } as PanelState["value"]);
+
+  const addCarreraItem = () => {
+    const clean = newCarrera.trim().toUpperCase();
+    if (!clean) return;
+    const currentMods = (value as Preparatoria).modalidades || [];
+    if (!currentMods.includes(clean as ModalidadPrepa)) {
+      update({ modalidades: [...currentMods, clean] });
+    }
+    setNewCarrera("");
+  };
 
   const toggleActive = () =>
     update({ activo: !(value as { activo?: boolean }).activo });
@@ -446,7 +498,9 @@ function SidePanel({
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-foreground">{title}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Sector Sur — Nivel Medio Superior</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isLicenciatura ? "Sector Sur — Nivel Licenciatura" : "Sector Sur — Nivel Medio Superior"}
+            </p>
           </div>
           <button
             type="button"
@@ -462,14 +516,14 @@ function SidePanel({
             <>
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Clave de la Escuela <span className="text-amber-500">*</span>
+                  Clave de la Unidad <span className="text-amber-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={(value as Preparatoria).clave}
                   disabled={panel.mode === "edit"}
                   onChange={e => update({ clave: e.target.value.trim() })}
-                  placeholder="Ej. 8210"
+                  placeholder={isLicenciatura ? "Ej. 4800" : "Ej. 8210"}
                   className="w-full h-9 bg-secondary/50 border border-border rounded-lg px-3 text-xs font-mono font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 disabled:opacity-50"
                 />
               </div>
@@ -482,37 +536,97 @@ function SidePanel({
                   type="text"
                   value={(value as Preparatoria).nombre}
                   onChange={e => update({ nombre: e.target.value })}
-                  placeholder="Ej. Preparatoria Concordia"
+                  placeholder={isLicenciatura ? "Ej. FAC. DE INFORMÁTICA MAZATLÁN" : "Ej. Preparatoria Concordia"}
                   className="w-full h-9 bg-secondary/50 border border-border rounded-lg px-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
                 />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                  Modalidades Educativas Ofertadas <span className="text-amber-500">*</span>
+                  {isLicenciatura ? "Licenciaturas / Carreras Ofertadas" : "Modalidades Educativas Ofertadas"}{" "}
+                  <span className="text-amber-500">*</span>
                 </label>
-                <div className="space-y-2 bg-secondary/20 p-3 rounded-xl border border-border">
-                  {MODALIDADES.map(mod => {
-                    const currentMods = (value as Preparatoria).modalidades || [];
-                    const isChecked = currentMods.includes(mod);
-                    return (
-                      <label key={mod} className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer select-none">
+                {isLicenciatura ? (
+                  <div className="space-y-2.5 bg-secondary/20 p-3 rounded-xl border border-border">
+                    {canManage && (
+                      <div className="flex gap-1.5">
                         <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={e => {
-                            const next = e.target.checked
-                              ? [...currentMods, mod]
-                              : currentMods.filter(m => m !== mod);
-                            update({ modalidades: next });
+                          type="text"
+                          value={newCarrera}
+                          onChange={e => setNewCarrera(e.target.value.toUpperCase())}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addCarreraItem();
+                            }
                           }}
-                          className="w-4 h-4 rounded border-border text-amber-500 focus:ring-amber-400/20"
+                          placeholder="LICENCIATURA EN..."
+                          className="flex-1 h-8 bg-card border border-border rounded-lg px-2.5 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
                         />
-                        <span className="font-medium">{mod}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+                        <button
+                          type="button"
+                          onClick={addCarreraItem}
+                          className="h-8 px-2.5 rounded-lg bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold flex items-center gap-1 transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Agregar
+                        </button>
+                      </div>
+                    )}
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                      {((value as Preparatoria).modalidades || []).length === 0 ? (
+                        <p className="text-[11px] text-muted-foreground py-1">
+                          Agrega al menos una carrera o licenciatura.
+                        </p>
+                      ) : (
+                        ((value as Preparatoria).modalidades || []).map(mod => (
+                          <div
+                            key={mod}
+                            className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs"
+                          >
+                            <span className="font-medium text-foreground">{mod}</span>
+                            {canManage && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currentMods = (value as Preparatoria).modalidades || [];
+                                  update({ modalidades: currentMods.filter(m => m !== mod) });
+                                }}
+                                className="text-muted-foreground hover:text-red-500 transition-colors p-0.5"
+                                title="Quitar carrera"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 bg-secondary/20 p-3 rounded-xl border border-border">
+                    {MODALIDADES.map(mod => {
+                      const currentMods = (value as Preparatoria).modalidades || [];
+                      const isChecked = currentMods.includes(mod);
+                      return (
+                        <label key={mod} className="flex items-center gap-2.5 text-xs text-foreground cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => {
+                              const next = e.target.checked
+                                ? [...currentMods, mod]
+                                : currentMods.filter(m => m !== mod);
+                              update({ modalidades: next });
+                            }}
+                            className="w-4 h-4 rounded border-border text-amber-500 focus:ring-amber-400/20"
+                          />
+                          <span className="font-medium">{mod}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -744,13 +858,19 @@ function validateCatalog(
   tab: CatalogTab,
   _mode: PanelMode,
   value: PanelState["value"],
-  _catalogos: Catalogos
+  _catalogos: Catalogos,
+  isLicenciatura = false
 ): string | null {
   if (tab === "preparatorias") {
     const p = value as Preparatoria;
-    if (!p.clave.trim()) return "La clave de la preparatoria es obligatoria.";
-    if (!p.nombre.trim()) return "El nombre de la preparatoria es obligatorio.";
-    if (!p.modalidades || p.modalidades.length === 0) return "Debes seleccionar al menos una modalidad.";
+    const unitNoun = isLicenciatura ? "facultad" : "preparatoria";
+    if (!p.clave.trim()) return `La clave de la ${unitNoun} es obligatoria.`;
+    if (!p.nombre.trim()) return `El nombre de la ${unitNoun} es obligatorio.`;
+    if (!p.modalidades || p.modalidades.length === 0) {
+      return isLicenciatura
+        ? "Debes agregar al menos una licenciatura o carrera."
+        : "Debes seleccionar al menos una modalidad.";
+    }
   } else {
     const t = value as TramiteCatalogo;
     if (!t.nombre.trim()) return "El nombre del trámite es obligatorio.";

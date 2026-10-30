@@ -20,6 +20,7 @@ import { CustomSelect } from "../../components/controls";
 import {
   CICLO_MESES,
   COSTO_BASE_CERTIFICADO,
+  FACULTADES_LICENCIATURA,
   MESES,
   MESES_ABR,
   MESES_SHORT,
@@ -43,6 +44,7 @@ import type {
   Alumno,
   AlumnoBulkChanges,
   Catalogos,
+  DivisionAcademica,
   EstadoTramite,
   ModalidadPrepa,
   Preparatoria,
@@ -92,13 +94,22 @@ function isValidNumeroCuenta(nc: string): boolean {
   return /^\d{6,8}$/.test(nc.trim());
 }
 
-function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos, costoBase = COSTO_BASE_CERTIFICADO): Alumno {
-  const prepas = catalogos?.preparatorias?.length ? catalogos.preparatorias : PREPARATORIAS;
-  const defaultPrepa = prepas[0];
-  const defaultModalidad = defaultPrepa.modalidades[0] || "Escolarizada";
+function emptyAlumno(
+  mes: number,
+  anio: number,
+  catalogos?: Catalogos,
+  costoBase = COSTO_BASE_CERTIFICADO,
+  division: DivisionAcademica = "bachillerato"
+): Alumno {
+  const fallbackList = division === "licenciatura" ? FACULTADES_LICENCIATURA : PREPARATORIAS;
+  const prepas = catalogos?.preparatorias?.length ? catalogos.preparatorias : fallbackList;
+  const defaultPrepa = prepas[0] ?? fallbackList[0];
+  const defaultModalidad =
+    defaultPrepa.modalidades[0] || (division === "licenciatura" ? "LICENCIATURA" : "Escolarizada");
   const today = new Date();
   const fechaHoy = fmtDate(today.getDate(), mes, anio);
   const cicloActual = getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(mes, anio));
+  const aniosDuracion = division === "licenciatura" ? 5 : 3;
 
   return {
     id: `new-${Date.now()}`,
@@ -110,7 +121,7 @@ function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos, costoBase
     preparatoriaClave: defaultPrepa.clave,
     preparatoriaNombre: defaultPrepa.nombre,
     modalidad: defaultModalidad,
-    carreraCodigo: getDefaultCarreraCodigo(defaultModalidad),
+    carreraCodigo: getDefaultCarreraCodigo(defaultModalidad, division),
     planEstudio: "18",
     microfilm: "",
     revisoHistorial: true,
@@ -123,7 +134,7 @@ function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos, costoBase
     email: "",
     telefono: "",
     telefonoAlt: "",
-    generacion: `${anio - 3}-${anio}`,
+    generacion: `${anio - aniosDuracion}-${anio}`,
     recibio: fechaHoy,
     ingreso: fechaHoy,
     recibido: "",
@@ -136,6 +147,7 @@ function emptyAlumno(mes: number, anio: number, catalogos?: Catalogos, costoBase
     estado: "pendiente",
     mes,
     anio,
+    division,
   };
 }
 
@@ -304,6 +316,7 @@ function EditModal({
   mes,
   anio,
   catalogos,
+  division = "bachillerato",
   costoBase = COSTO_BASE_CERTIFICADO,
   onSave,
   onClose,
@@ -312,16 +325,19 @@ function EditModal({
   mes: number;
   anio: number;
   catalogos?: Catalogos;
+  division?: DivisionAcademica;
   costoBase?: number;
   onSave: (a: Alumno) => Promise<void> | void;
   onClose: () => void;
 }) {
+  const isLicenciatura = division === "licenciatura";
+  const fallbackList = isLicenciatura ? FACULTADES_LICENCIATURA : PREPARATORIAS;
   const prepas = useMemo(
-    () => (catalogos?.preparatorias?.length ? catalogos.preparatorias : PREPARATORIAS),
-    [catalogos]
+    () => (catalogos?.preparatorias?.length ? catalogos.preparatorias : fallbackList),
+    [catalogos, fallbackList]
   );
 
-  const [form, setForm] = useState<Alumno>(alumno ?? emptyAlumno(mes, anio, catalogos, costoBase));
+  const [form, setForm] = useState<Alumno>(alumno ?? emptyAlumno(mes, anio, catalogos, costoBase, division));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -338,17 +354,18 @@ function EditModal({
     setForm(prev => ({ ...prev, [k]: v }));
   };
 
-  // When preparatoria changes, update name and reset modalidad to first available
+  // When preparatoria/facultad changes, update name and reset modalidad/carrera to first available
   const handlePrepaChange = (clave: string) => {
     const selected = prepas.find(p => p.clave === clave);
     if (!selected) return;
-    const nextModalidad = selected.modalidades[0] || "Escolarizada";
+    const nextModalidad = selected.modalidades[0] || (isLicenciatura ? "LICENCIATURA" : "Escolarizada");
     setForm(prev => ({
       ...prev,
       preparatoriaClave: selected.clave,
       preparatoriaNombre: selected.nombre,
       modalidad: nextModalidad,
-      carreraCodigo: getDefaultCarreraCodigo(nextModalidad),
+      carreraCodigo: getDefaultCarreraCodigo(nextModalidad, division),
+      division,
     }));
   };
 
@@ -356,12 +373,15 @@ function EditModal({
     setForm(prev => ({
       ...prev,
       modalidad: nextModalidad,
-      carreraCodigo: getDefaultCarreraCodigo(nextModalidad),
+      carreraCodigo: getDefaultCarreraCodigo(nextModalidad, division),
     }));
   };
 
-  const selectedPrepa = prepas.find(p => p.clave === form.preparatoriaClave) || prepas[0];
-  const modalidadOptions = selectedPrepa.modalidades.map(m => ({ value: m, label: m }));
+  const selectedPrepa = prepas.find(p => p.clave === form.preparatoriaClave) || prepas[0] || fallbackList[0];
+  const rawModalidades = selectedPrepa.modalidades.includes(form.modalidad)
+    ? selectedPrepa.modalidades
+    : [form.modalidad, ...selectedPrepa.modalidades].filter(Boolean);
+  const modalidadOptions = rawModalidades.map(m => ({ value: m, label: m }));
 
   const prepaOptions = prepas.map(p => ({
     value: p.clave,
@@ -443,7 +463,7 @@ function EditModal({
                 {isAdd ? "Captura de Certificado en Ventanilla" : "Editar Solicitud de Certificado"}
               </p>
               <p className="text-[10px] text-muted-foreground mt-0.5">
-                Nivel Medio Superior — Sector Sur
+                {isLicenciatura ? "Nivel Licenciatura — Sector Sur" : "Nivel Medio Superior — Sector Sur"}
               </p>
             </div>
           </div>
@@ -498,42 +518,50 @@ function EditModal({
             </div>
           </div>
 
-          {/* Section 2: Preparatoria, Modalidad, Carrera y Plan */}
+          {/* Section 2: Unidad Académica, Modalidad/Carrera y Plan */}
           <div className="border-t border-border/50 pt-3">
             <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-2">
               Adscripción y Plan de Estudios
             </p>
-            <div className="grid grid-cols-6 gap-4">
-              <div className="col-span-3">
-                <label className={labelCls}>Unidad Académica (Preparatoria){requiredMark}</label>
+            <div className="grid grid-cols-12 gap-4">
+              <div className="col-span-4">
+                <label className={labelCls}>
+                  {isLicenciatura ? "Facultad / Unidad Académica" : "Unidad Académica (Preparatoria)"}
+                  {requiredMark}
+                </label>
                 <CustomSelect
                   value={form.preparatoriaClave}
                   onChange={handlePrepaChange}
                   options={prepaOptions}
-                  placeholder="Seleccionar preparatoria..."
+                  placeholder={isLicenciatura ? "Seleccionar facultad..." : "Seleccionar preparatoria..."}
                   searchable
                   searchPlaceholder="Buscar por clave o nombre..."
                 />
               </div>
-              <div>
-                <label className={labelCls}>Modalidad{requiredMark}</label>
+              <div className="col-span-4">
+                <label className={labelCls}>
+                  {isLicenciatura ? "Licenciatura / Carrera" : "Modalidad"}
+                  {requiredMark}
+                </label>
                 <CustomSelect
                   value={form.modalidad}
                   onChange={v => handleModalidadChange(v as ModalidadPrepa)}
                   options={modalidadOptions}
+                  searchable={isLicenciatura}
+                  searchPlaceholder="Buscar carrera..."
                 />
               </div>
-              <div>
-                <label className={labelCls}>Carrera (Cód.)</label>
+              <div className="col-span-2">
+                <label className={labelCls}>{isLicenciatura ? "Cód. Carrera" : "Carrera (Cód.)"}</label>
                 <input
                   className={`${fieldCls} font-mono text-center font-bold`}
-                  value={form.carreraCodigo ?? getDefaultCarreraCodigo(form.modalidad)}
+                  value={form.carreraCodigo ?? getDefaultCarreraCodigo(form.modalidad, division)}
                   onChange={e => set("carreraCodigo", e.target.value.replace(/\D/g, "").slice(0, 3))}
-                  placeholder="1"
+                  placeholder={isLicenciatura ? "Opc." : "1"}
                   inputMode="numeric"
                 />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className={labelCls}>Plan Estudio</label>
                 <input
                   className={`${fieldCls} font-mono text-center font-bold`}
@@ -812,6 +840,7 @@ function EditModal({
 export function AlumnosTab({
   alumnos,
   catalogos,
+  division = "bachillerato",
   costoBase,
   onUpdate,
   onBulkUpdate,
@@ -821,6 +850,7 @@ export function AlumnosTab({
 }: {
   alumnos: Alumno[];
   catalogos?: Catalogos;
+  division?: DivisionAcademica;
   costoBase?: number;
   onUpdate: (a: Alumno) => Promise<void> | void;
   onBulkUpdate: (ids: string[], changes: AlumnoBulkChanges) => Promise<void> | void;
@@ -828,6 +858,7 @@ export function AlumnosTab({
   onAdd: (a: Alumno) => Promise<void> | void;
   onToast?: (msg: string, variant?: "success" | "info" | "error") => void;
 }) {
+  const isLicenciatura = division === "licenciatura";
   const today = new Date();
   const currentCycleEndYear = getCicloEscolarAnioFin();
 
@@ -904,8 +935,7 @@ export function AlumnosTab({
     if (ids.length === 0) return;
     const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
     await onBulkUpdate(ids, { estado: "recibido", recibido: todayStr, localizacion: "Mazatlán" });
-    setSelectedIds(new Set());
-    onToast?.(`${ids.length} trámites marcados como recibidos`, "success");
+    onToast?.(`${ids.length} trámites marcados como recibidos (listos para Generar Formato Corte)`, "success");
   };
 
   const handleBulkEnviados = async () => {
@@ -919,7 +949,14 @@ export function AlumnosTab({
 
   const [exportingFormato, setExportingFormato] = useState(false);
   const [exportingCiclo, setExportingCiclo] = useState(false);
-  const [folioCorte, setFolioCorte] = useState(() => loadSavedFolioCorte());
+  const [folioCorte, setFolioCorte] = useState(() => loadSavedFolioCorte(division));
+
+  useEffect(() => {
+    setFolioCorte(loadSavedFolioCorte(division));
+    setFilterPrepa("");
+    setFilterModalidad("");
+    setSelectedIds(new Set());
+  }, [division]);
 
   // Alumnos elegibles para el Formato de Envío (Recibidos o Rechazados)
   const alumnosElegiblesFormato = useMemo(() => {
@@ -934,7 +971,7 @@ export function AlumnosTab({
     try {
       const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
       const cleanFolio = folioCorte.trim() || "09";
-      await exportFormatoControlSolicitudesXlsx(alumnosElegiblesFormato, cleanFolio);
+      await exportFormatoControlSolicitudesXlsx(alumnosElegiblesFormato, cleanFolio, division);
 
       const recibidos = alumnosElegiblesFormato
         .filter(a => a.estado === "recibido")
@@ -969,7 +1006,7 @@ export function AlumnosTab({
     if (cicloAlumnos.length === 0 || exportingCiclo) return;
     setExportingCiclo(true);
     try {
-      await exportTramiteTituloXlsx(cicloAlumnos, selectedCicloAnioFin);
+      await exportTramiteTituloXlsx(cicloAlumnos, selectedCicloAnioFin, division);
       onToast?.("Concentrado de ciclo exportado correctamente", "success");
     } catch (err) {
       onToast?.(err instanceof Error ? err.message : "Error al exportar concentrado", "error");
@@ -986,7 +1023,21 @@ export function AlumnosTab({
   const aceptadosMes = mesAlumnos.filter(a => a.estado === "aceptado").length;
   const ingresoTotal = mesAlumnos.reduce((sum, a) => sum + (a.pago || 0), 0);
 
-  const prepas = catalogos?.preparatorias?.length ? catalogos.preparatorias : PREPARATORIAS;
+  const fallbackPrepas = isLicenciatura ? FACULTADES_LICENCIATURA : PREPARATORIAS;
+  const prepas = catalogos?.preparatorias?.length ? catalogos.preparatorias : fallbackPrepas;
+
+  const filterModalidadOptions = useMemo(() => {
+    if (!isLicenciatura) return MODALIDADES;
+    const sourceUnits = filterPrepa ? prepas.filter(p => p.clave === filterPrepa) : prepas;
+    const set = new Set<string>();
+    for (const unit of sourceUnits) {
+      for (const carrera of unit.modalidades) {
+        if (carrera) set.add(carrera);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+  }, [filterPrepa, isLicenciatura, prepas]);
+
   const isModalOpen = editTarget !== (undefined as never);
 
   return (
@@ -997,6 +1048,7 @@ export function AlumnosTab({
           mes={selectedMes}
           anio={selectedMonthYear}
           catalogos={catalogos}
+          division={division}
           costoBase={costoBase}
           onSave={handleSave}
           onClose={closeModal}
@@ -1090,17 +1142,20 @@ export function AlumnosTab({
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar por cuenta, nombre o prepa..."
+              placeholder={isLicenciatura ? "Buscar por cuenta, nombre, facultad..." : "Buscar por cuenta, nombre o prepa..."}
               className="w-full h-9 bg-card border border-border rounded-lg pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25"
             />
           </div>
 
           <select
             value={filterPrepa}
-            onChange={e => setFilterPrepa(e.target.value)}
-            className="h-9 px-3 bg-card border border-border rounded-lg text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 max-w-[200px]"
+            onChange={e => {
+              setFilterPrepa(e.target.value);
+              if (isLicenciatura) setFilterModalidad("");
+            }}
+            className="h-9 px-3 bg-card border border-border rounded-lg text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 max-w-[210px]"
           >
-            <option value="">Todas las preparatorias</option>
+            <option value="">{isLicenciatura ? "Todas las facultades" : "Todas las preparatorias"}</option>
             {prepas.map(p => (
               <option key={p.clave} value={p.clave}>
                 {p.clave} - {p.nombre}
@@ -1111,10 +1166,10 @@ export function AlumnosTab({
           <select
             value={filterModalidad}
             onChange={e => setFilterModalidad(e.target.value)}
-            className="h-9 px-3 bg-card border border-border rounded-lg text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25"
+            className="h-9 px-3 bg-card border border-border rounded-lg text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-amber-400/25 max-w-[220px]"
           >
-            <option value="">Todas las modalidades</option>
-            {MODALIDADES.map(m => (
+            <option value="">{isLicenciatura ? "Todas las carreras" : "Todas las modalidades"}</option>
+            {filterModalidadOptions.map(m => (
               <option key={m} value={m}>
                 {m}
               </option>
@@ -1212,7 +1267,7 @@ export function AlumnosTab({
 
           <button
             type="button"
-            onClick={() => exportToCSV(filtered, selectedMes, selectedMonthYear)}
+            onClick={() => exportToCSV(filtered, selectedMes, selectedMonthYear, division)}
             className="h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground flex items-center gap-1.5 transition-colors shadow-sm"
             title="Exportar registros del mes a CSV"
           >
@@ -1250,8 +1305,8 @@ export function AlumnosTab({
                 <th className="px-2 py-2.5 w-8 text-center">#</th>
                 <th className="px-3 py-2.5">No. Cuenta</th>
                 <th className="px-3 py-2.5">Nombre del Alumno</th>
-                <th className="px-3 py-2.5">Preparatoria</th>
-                <th className="px-3 py-2.5">Modalidad</th>
+                <th className="px-3 py-2.5">{isLicenciatura ? "Facultad / Unidad" : "Preparatoria"}</th>
+                <th className="px-3 py-2.5">{isLicenciatura ? "Carrera" : "Modalidad"}</th>
                 <th className="px-3 py-2.5">Turno</th>
                 <th className="px-3 py-2.5">Tipo</th>
                 <th className="px-3 py-2.5">Generación</th>
@@ -1311,8 +1366,11 @@ export function AlumnosTab({
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                            a.modalidad === "Escolarizada"
+                          title={a.modalidad}
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border inline-block max-w-[240px] truncate align-middle ${
+                            isLicenciatura
+                              ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-600 dark:text-indigo-300"
+                              : a.modalidad === "Escolarizada"
                               ? "bg-blue-500/10 border-blue-500/20 text-blue-500"
                               : a.modalidad === "Semiescolarizada"
                               ? "bg-purple-500/10 border-purple-500/20 text-purple-500"

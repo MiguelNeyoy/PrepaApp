@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -6,6 +6,7 @@ import { Database, Loader2, RefreshCw, WifiOff } from "lucide-react";
 import { AdminDashboard, AppTitleBar, LoginScreen } from "./features/dashboard/AdminDashboard";
 import type { TitlebarToast } from "./features/dashboard/AdminDashboard";
 import {
+  buildCycleSummaries,
   createPreparatoria,
   createAlumno as createAlumnoRecord,
   createManagedUser,
@@ -22,6 +23,7 @@ import {
   fetchCycleSummaries,
   fetchProfiles,
   getCurrentAccount,
+  isMockMode,
   requestPasswordRecovery,
   updatePasswordFromRecovery,
   verifyPasswordRecoveryInput,
@@ -36,8 +38,22 @@ import {
   updateTramite,
 } from "./services/supabase";
 import { isTauriRuntime, resizeDesktopWindow } from "./utils/window";
-import { loadSavedCostoBase } from "./domain";
-import type { Account, AdminTab, Alumno, AlumnoBulkChanges, Catalogos, CycleSummary, ManagedProfile, ManagedRole, Preparatoria, ThemeMode, TramiteCatalogo } from "./domain";
+import { getDivisionFromClave, loadSavedCostoBase } from "./domain";
+import type {
+  AccesoDivision,
+  Account,
+  AdminTab,
+  Alumno,
+  AlumnoBulkChanges,
+  Catalogos,
+  CycleSummary,
+  DivisionAcademica,
+  ManagedProfile,
+  ManagedRole,
+  Preparatoria,
+  ThemeMode,
+  TramiteCatalogo,
+} from "./domain";
 
 const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150] as const;
 
@@ -69,6 +85,9 @@ function getLoginErrorMessage(err: unknown) {
   }
   if (message.includes("network") || message.includes("fetch")) {
     return "No se pudo conectar con el servicio de inicio de sesion.";
+  }
+  if (error?.message && (message.includes("desactivada") || message.includes("supabase") || message.includes("perfil"))) {
+    return error.message;
   }
 
   return "No se pudo iniciar sesion. Verifica tus datos e intentalo de nuevo.";
@@ -201,10 +220,72 @@ export default function App() {
   const [profiles, setProfiles] = useState<ManagedProfile[]>([]);
   const [cycleSummaries, setCycleSummaries] = useState<CycleSummary[]>([]);
   const [costoBase, setCostoBase] = useState<number>(() => loadSavedCostoBase());
+  const [activeDivision, setActiveDivision] = useState<DivisionAcademica>(() => {
+    if (typeof window === "undefined") return "bachillerato";
+    return window.localStorage.getItem("app_active_division") === "licenciatura"
+      ? "licenciatura"
+      : "bachillerato";
+  });
   const [dashboardTab, setDashboardTab] = useState<AdminTab>("alumnos");
   const [titlebarRefreshing, setTitlebarRefreshing] = useState(false);
   const [titlebarToast, setTitlebarToast] = useState<TitlebarToast | null>(null);
   const titlebarToastTimer = useRef<number>();
+
+  const applyAccountDivision = useCallback((currentAccount: Account) => {
+    if (currentAccount.division === "licenciatura") {
+      setActiveDivision("licenciatura");
+    } else if (currentAccount.division === "bachillerato") {
+      setActiveDivision("bachillerato");
+    } else {
+      const saved =
+        typeof window !== "undefined" && window.localStorage.getItem("app_active_division") === "licenciatura"
+          ? "licenciatura"
+          : "bachillerato";
+      setActiveDivision(saved);
+    }
+  }, []);
+
+  const handleDivisionChange = useCallback(
+    (next: DivisionAcademica) => {
+      const canSwitch = account.role === "admin" || !account.division || account.division === "ambas";
+      if (!canSwitch) return;
+      setActiveDivision(next);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("app_active_division", next);
+      }
+    },
+    [account.division, account.role]
+  );
+
+  const alumnosDivision = useMemo(
+    () => alumnos.filter(a => (a.division ?? getDivisionFromClave(a.preparatoriaClave)) === activeDivision),
+    [alumnos, activeDivision]
+  );
+
+  const catalogosDivision = useMemo<Catalogos | undefined>(() => {
+    if (!catalogos) return undefined;
+    return {
+      ...catalogos,
+      preparatorias: catalogos.preparatorias.filter(
+        p => (p.division ?? getDivisionFromClave(p.clave)) === activeDivision
+      ),
+    };
+  }, [catalogos, activeDivision]);
+
+  const catalogosAdminDivision = useMemo<Catalogos | undefined>(() => {
+    if (!catalogosAdmin) return undefined;
+    return {
+      ...catalogosAdmin,
+      preparatorias: catalogosAdmin.preparatorias.filter(
+        p => (p.division ?? getDivisionFromClave(p.clave)) === activeDivision
+      ),
+    };
+  }, [catalogosAdmin, activeDivision]);
+
+  const cycleSummariesDivision = useMemo(
+    () => (cycleSummaries.length > 0 || alumnosDivision.length > 0 ? buildCycleSummaries(alumnosDivision) : []),
+    [alumnosDivision, cycleSummaries.length]
+  );
 
   const showTitlebarToast = useCallback((variant: TitlebarToast["variant"], message: string) => {
     window.clearTimeout(titlebarToastTimer.current);
@@ -293,7 +374,8 @@ export default function App() {
   }, [isAuthenticated]);
 
   const loadData = useCallback(async (includeAdminData = false) => {
-    if (!isBrowserOnline()) {
+    const devMockActive = Boolean(import.meta.env.DEV) && isMockMode;
+    if (!devMockActive && !isBrowserOnline()) {
       setIsOnline(false);
       throw new Error("No hay conexión a internet.");
     }
@@ -346,6 +428,7 @@ export default function App() {
         }
 
         setAccount(currentAccount);
+        applyAccountDivision(currentAccount);
         setIsAuthenticated(true);
         await loadData(currentAccount.role === "admin");
       })
@@ -361,10 +444,11 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [loadData]);
+  }, [applyAccountDivision, loadData]);
 
   const handleLogin = useCallback(async (email: string, password: string, rememberCredentials: boolean) => {
-    if (!isOnline) throw new Error("No hay conexión a internet.");
+    const devMockActive = Boolean(import.meta.env.DEV) && isMockMode;
+    if (!devMockActive && !isOnline) throw new Error("No hay conexión a internet.");
 
     setAppError("");
     try {
@@ -372,16 +456,17 @@ export default function App() {
       setLoginLoading(true);
       const currentAccount = await getCurrentAccount();
       if (!currentAccount) throw new Error("No se pudo abrir la sesión.");
+      applyAccountDivision(currentAccount);
       await loadData(currentAccount.role === "admin");
       setAccount(currentAccount);
       setIsAuthenticated(true);
 
       try {
-        if (rememberCredentials) {
+        if (!isMockMode && rememberCredentials) {
           const credentials = { email, password };
           await saveLoginCredentials(credentials);
           setSavedLoginCredentials(credentials);
-        } else {
+        } else if (!isMockMode) {
           await clearSavedLoginCredentials();
           setSavedLoginCredentials(null);
         }
@@ -393,7 +478,7 @@ export default function App() {
     } finally {
       setLoginLoading(false);
     }
-  }, [loadData, showTitlebarToast]);
+  }, [applyAccountDivision, isOnline, loadData, showTitlebarToast]);
 
   const handlePasswordRecoveryRequest = useCallback(async (email: string) => {
     if (!isOnline) throw new Error("No hay conexion a internet.");
@@ -419,26 +504,34 @@ export default function App() {
   const addAlumno = useCallback(async (a: Alumno) => {
     if (!catalogos) throw new Error("Los catálogos todavía no están cargados.");
     try {
-      const created = await createAlumnoRecord(a, catalogos);
+      const payload: Alumno = {
+        ...a,
+        division: a.division ?? activeDivision,
+      };
+      const created = await createAlumnoRecord(payload, catalogos);
       setAlumnos(prev => [created, ...prev]);
       notifyDatabaseSuccess("Solicitud guardada", `${created.nombre} se guardó en Base de Datos.`);
     } catch (err) {
       notifyDatabaseError(err, "No se pudo guardar el registro.");
       throw err;
     }
-  }, [catalogos]);
+  }, [activeDivision, catalogos, notifyDatabaseError, notifyDatabaseSuccess]);
 
   const updateAlumno = useCallback(async (updated: Alumno) => {
     if (!catalogos) throw new Error("Los catálogos todavía no están cargados.");
     try {
-      const saved = await updateAlumnoRecord(updated, catalogos);
+      const payload: Alumno = {
+        ...updated,
+        division: updated.division ?? activeDivision,
+      };
+      const saved = await updateAlumnoRecord(payload, catalogos);
       setAlumnos(prev => prev.map(a => a.id === saved.id ? saved : a));
       notifyDatabaseSuccess("Cambios guardados", `${saved.nombre} se actualizó en Base de Datos.`);
     } catch (err) {
       notifyDatabaseError(err, "No se pudo actualizar el registro.");
       throw err;
     }
-  }, [catalogos]);
+  }, [activeDivision, catalogos, notifyDatabaseError, notifyDatabaseSuccess]);
 
   const updateAlumnosBulk = useCallback(async (ids: string[], changes: AlumnoBulkChanges) => {
     try {
@@ -467,9 +560,10 @@ export default function App() {
   }, [alumnos]);
 
   const refreshCoreData = useCallback(async () => {
-    if (!isBrowserOnline()) {
+    const devMockActive = Boolean(import.meta.env.DEV) && isMockMode;
+    if (!devMockActive && !isBrowserOnline()) {
       setIsOnline(false);
-      throw new Error("No hay conexiÃ³n a internet.");
+      throw new Error("No hay conexión a internet.");
     }
 
     setDataLoading(true);
@@ -508,38 +602,42 @@ export default function App() {
   }, [refreshCoreData]);
 
   const handleCreatePreparatoria = useCallback(async (prepa: Preparatoria) => {
+    const unitTitle = activeDivision === "licenciatura" ? "Facultad" : "Preparatoria";
     try {
-      await createPreparatoria(prepa);
+      await createPreparatoria({ ...prepa, division: prepa.division ?? activeDivision });
       await refreshCatalogos();
-      notifyDatabaseSuccess("Preparatoria guardada", `${prepa.clave} - ${prepa.nombre}`);
+      notifyDatabaseSuccess(`${unitTitle} guardada`, `${prepa.clave} - ${prepa.nombre}`);
     } catch (err) {
-      notifyDatabaseError(err, "No se pudo guardar la preparatoria.");
+      notifyDatabaseError(err, `No se pudo guardar la ${unitTitle.toLowerCase()}.`);
       throw err;
     }
-  }, [refreshCatalogos]);
+  }, [activeDivision, notifyDatabaseError, notifyDatabaseSuccess, refreshCatalogos]);
 
   const handleUpdatePreparatoria = useCallback(async (prepa: Preparatoria) => {
+    const unitTitle = activeDivision === "licenciatura" ? "Facultad" : "Preparatoria";
     try {
-      await updatePreparatoria(prepa);
+      await updatePreparatoria({ ...prepa, division: prepa.division ?? activeDivision });
       await refreshCatalogos();
-      notifyDatabaseSuccess("Preparatoria actualizada", `${prepa.clave} - ${prepa.nombre}`);
+      notifyDatabaseSuccess(`${unitTitle} actualizada`, `${prepa.clave} - ${prepa.nombre}`);
     } catch (err) {
-      notifyDatabaseError(err, "No se pudo actualizar la preparatoria.");
+      notifyDatabaseError(err, `No se pudo actualizar la ${unitTitle.toLowerCase()}.`);
       throw err;
     }
-  }, [refreshCatalogos]);
+  }, [activeDivision, notifyDatabaseError, notifyDatabaseSuccess, refreshCatalogos]);
 
   const handleDeletePreparatoria = useCallback(async (prepa: Preparatoria) => {
+    const unitTitle = activeDivision === "licenciatura" ? "Facultad" : "Preparatoria";
+    const unitNoun = activeDivision === "licenciatura" ? "la facultad" : "la preparatoria";
     try {
       await deletePreparatoria(prepa.clave);
       await refreshCatalogos();
-      notifyDatabaseSuccess("Preparatoria eliminada", `${prepa.clave} - ${prepa.nombre}`);
+      notifyDatabaseSuccess(`${unitTitle} eliminada`, `${prepa.clave} - ${prepa.nombre}`);
     } catch (err) {
-      const message = getCatalogDeleteErrorMessage(err, "la preparatoria");
+      const message = getCatalogDeleteErrorMessage(err, unitNoun);
       notifyDatabaseError(new Error(message), message);
       throw new Error(message);
     }
-  }, [refreshCatalogos]);
+  }, [activeDivision, notifyDatabaseError, notifyDatabaseSuccess, refreshCatalogos]);
 
   const handleCreateTramite = useCallback(async (tramite: TramiteCatalogo) => {
     try {
@@ -586,7 +684,12 @@ export default function App() {
     }
   }, [notifyDatabaseError, notifyDatabaseSuccess]);
 
-  const handleCreateManagedUser = useCallback(async (input: { email: string; displayName: string; role: ManagedRole }) => {
+  const handleCreateManagedUser = useCallback(async (input: {
+    email: string;
+    displayName: string;
+    role: ManagedRole;
+    division: AccesoDivision;
+  }) => {
     try {
       const created = await createManagedUser(input);
       setProfiles(prev => [created, ...prev.filter(profile => profile.id !== created.id)]);
@@ -595,24 +698,31 @@ export default function App() {
       notifyDatabaseError(err, "No se pudo crear el usuario.");
       throw err;
     }
-  }, []);
+  }, [notifyDatabaseError, notifyDatabaseSuccess]);
 
   const handleUpdateManagedProfile = useCallback(async (
     id: string,
-    changes: { displayName?: string; role?: ManagedRole; active?: boolean }
+    changes: { displayName?: string; role?: ManagedRole; division?: AccesoDivision; active?: boolean }
   ) => {
     try {
       const updated = await updateProfileRoleActive(id, changes);
       setProfiles(prev => prev.map(profile => profile.id === updated.id ? updated : profile));
       notifyDatabaseSuccess("Usuario actualizado", updated.displayName);
       if (account.id === updated.id) {
-        setAccount(prev => ({ ...prev, displayName: updated.displayName, role: updated.role }));
+        const nextAcc: Account = {
+          ...account,
+          displayName: updated.displayName,
+          role: updated.role,
+          division: updated.division,
+        };
+        setAccount(nextAcc);
+        applyAccountDivision(nextAcc);
       }
     } catch (err) {
       notifyDatabaseError(err, "No se pudo actualizar el usuario.");
       throw err;
     }
-  }, [account.id]);
+  }, [account, applyAccountDivision, notifyDatabaseError, notifyDatabaseSuccess]);
 
   const handleDeleteManagedUser = useCallback(async (profile: ManagedProfile) => {
     if (profile.id === account.id) {
@@ -632,7 +742,7 @@ export default function App() {
   const handleDeletePreviousCycle = useCallback(async (cicloAnioFin: number) => {
     if (!catalogos) throw new Error("Los catálogos todavía no están cargados.");
     try {
-      const deletedCount = await deletePreviousCycleRecord(cicloAnioFin);
+      const deletedCount = await deletePreviousCycleRecord(cicloAnioFin, activeDivision);
       const [nextAlumnos, nextCycleSummaries] = await Promise.all([
         fetchAlumnos(catalogos),
         fetchCycleSummaries(),
@@ -644,7 +754,7 @@ export default function App() {
       notifyDatabaseError(err, "No se pudo borrar el ciclo.");
       throw err;
     }
-  }, [catalogos]);
+  }, [activeDivision, catalogos, notifyDatabaseError, notifyDatabaseSuccess]);
 
   const handleAccountUpdate = useCallback(async (nextAccount: Account) => {
     try {
@@ -743,8 +853,10 @@ export default function App() {
     );
   }
 
+  const effectiveOnline = isOnline || (Boolean(import.meta.env.DEV) && isMockMode);
+
   if (!isAuthenticated) {
-    if (!isOnline) {
+    if (!effectiveOnline) {
       return (
         <div className="h-screen bg-background text-foreground overflow-hidden relative">
           <StatusScreen
@@ -803,7 +915,7 @@ export default function App() {
         toast={titlebarToast}
         onToggleTheme={toggleTheme}
         onUiScaleChange={applyUiScale}
-        refreshAction={isOnline ? {
+        refreshAction={effectiveOnline ? {
           label: titlebarRefreshLabel[dashboardTab],
           loading: titlebarRefreshing,
           disabled: dataLoading,
@@ -811,13 +923,15 @@ export default function App() {
         } : undefined}
       />
       <div className="flex-1 min-h-0">
-        {isOnline ? (
+        {effectiveOnline ? (
           <>
             <AppErrorBoundary>
               <AdminDashboard
-                alumnos={alumnos}
-                catalogos={catalogos}
-                catalogosAdmin={catalogosAdmin}
+                alumnos={alumnosDivision}
+                catalogos={catalogosDivision}
+                catalogosAdmin={catalogosAdminDivision}
+                division={activeDivision}
+                onDivisionChange={handleDivisionChange}
                 onUpdate={updateAlumno}
                 onBulkUpdate={updateAlumnosBulk}
                 onDelete={deleteAlumno}
@@ -831,7 +945,7 @@ export default function App() {
                 costoBase={costoBase}
                 onUpdateCostoBase={handleUpdateCostoBase}
                 profiles={profiles}
-                cycleSummaries={cycleSummaries}
+                cycleSummaries={cycleSummariesDivision}
                 onCreateUser={handleCreateManagedUser}
                 onUpdateProfile={handleUpdateManagedProfile}
                 onDeleteUser={handleDeleteManagedUser}

@@ -4,6 +4,7 @@ import { Building2, DollarSign, FileSpreadsheet, GraduationCap, TrendingUp, User
 import { CustomSelect, StatCard } from "../../components/controls";
 import {
   CICLO_MESES,
+  FACULTADES_LICENCIATURA,
   MESES,
   MESES_SHORT,
   MODALIDADES,
@@ -14,11 +15,19 @@ import {
   getCicloEscolarAnioFin,
   getCicloEscolarAnioFinFromPeriodo,
   getCicloEscolarLabel,
-  getPeriodoAnioForCiclo,
 } from "../../domain";
-import type { Alumno, Catalogos } from "../../domain";
+import type { Alumno, Catalogos, DivisionAcademica } from "../../domain";
 
-export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalogos?: Catalogos }) {
+export function MetricasTab({
+  alumnos,
+  catalogos,
+  division = "bachillerato",
+}: {
+  alumnos: Alumno[];
+  catalogos?: Catalogos;
+  division?: DivisionAcademica;
+}) {
+  const isLicenciatura = division === "licenciatura";
   const currentCycleEndYear = getCicloEscolarAnioFin();
   const [selectedCicloAnioFin, setSelectedCicloAnioFin] = useState(currentCycleEndYear);
   const [selectedMes, setSelectedMes] = useState(0); // 0 = todo el ciclo
@@ -83,8 +92,20 @@ export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalog
     return Array.from(grouped.values()).sort((a, b) => b.total - a.total || b.ingreso - a.ingreso);
   }, [displayedAlumnos]);
 
-  // Distribution by Modalidad
+  // Distribution by Modalidad / Carrera
   const byModalidad = useMemo(() => {
+    if (isLicenciatura) {
+      const grouped = new Map<string, { modalidad: string; total: number; ingreso: number }>();
+      for (const a of displayedAlumnos) {
+        const key = a.modalidad || "Sin especificar";
+        const cur = grouped.get(key) ?? { modalidad: key, total: 0, ingreso: 0 };
+        cur.total += 1;
+        cur.ingreso += a.pago || 0;
+        grouped.set(key, cur);
+      }
+      return Array.from(grouped.values()).sort((a, b) => b.total - a.total);
+    }
+
     return MODALIDADES.map(m => {
       const filtered = displayedAlumnos.filter(a => a.modalidad === m);
       return {
@@ -93,7 +114,7 @@ export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalog
         ingreso: filtered.reduce((s, a) => s + (a.pago || 0), 0),
       };
     }).filter(m => m.total > 0);
-  }, [displayedAlumnos]);
+  }, [displayedAlumnos, isLicenciatura]);
 
   // Distribution by Turno
   const byTurno = useMemo(() => {
@@ -110,7 +131,13 @@ export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalog
   const handleExportProductividad = async () => {
     setExportingReport(true);
     try {
-      await exportReporteProductividadTituloXlsx(alumnos, catalogos || { preparatorias: PREPARATORIAS, tramites: [] }, selectedCicloAnioFin);
+      const fallbackPrepas = isLicenciatura ? FACULTADES_LICENCIATURA : PREPARATORIAS;
+      await exportReporteProductividadTituloXlsx(
+        alumnos,
+        catalogos || { preparatorias: fallbackPrepas, tramites: [] },
+        selectedCicloAnioFin,
+        division
+      );
     } finally {
       setExportingReport(false);
     }
@@ -125,7 +152,7 @@ export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalog
             Métricas de Certificados
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Nivel Medio Superior — Sector Sur ({selectedCycleLabel})
+            {isLicenciatura ? "Nivel Licenciatura" : "Nivel Medio Superior"} — Sector Sur ({selectedCycleLabel})
           </p>
         </div>
 
@@ -252,11 +279,11 @@ export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalog
                 Emisión por Unidad Académica
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Ranking de preparatorias del Sector Sur
+                {isLicenciatura ? "Ranking de facultades del Sector Sur" : "Ranking de preparatorias del Sector Sur"}
               </p>
             </div>
             <span className="font-mono text-xs text-muted-foreground font-semibold">
-              {byPrepa.length} prepas activas
+              {byPrepa.length} {isLicenciatura ? "facultades activas" : "prepas activas"}
             </span>
           </div>
 
@@ -265,7 +292,7 @@ export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalog
               <thead className="border-b border-border text-[10px] uppercase font-bold text-muted-foreground">
                 <tr>
                   <th className="pb-2">Clave</th>
-                  <th className="pb-2">Preparatoria</th>
+                  <th className="pb-2">{isLicenciatura ? "Facultad / Unidad" : "Preparatoria"}</th>
                   <th className="pb-2 text-center">Trámites</th>
                   <th className="pb-2 text-right">Recaudación</th>
                 </tr>
@@ -296,22 +323,22 @@ export function MetricasTab({ alumnos, catalogos }: { alumnos: Alumno[]; catalog
 
         {/* Modalidad & Turno breakdowns */}
         <div className="space-y-5">
-          {/* Modalidad Breakdown */}
+          {/* Modalidad / Carrera Breakdown */}
           <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
             <h3 className="text-sm font-bold text-foreground mb-1">
-              Distribución por Modalidad
+              {isLicenciatura ? "Distribución por Carrera" : "Distribución por Modalidad"}
             </h3>
             <p className="text-xs text-muted-foreground mb-4">
-              Escolarizada, Semiescolarizada y Nocturno
+              {isLicenciatura ? "Programas de licenciatura tramitados" : "Escolarizada, Semiescolarizada y Nocturno"}
             </p>
             <div className="space-y-3">
               {byModalidad.map(m => {
                 const pct = totalCertificados > 0 ? ((m.total / totalCertificados) * 100).toFixed(0) : "0";
                 return (
                   <div key={m.modalidad} className="space-y-1">
-                    <div className="flex justify-between text-xs font-semibold">
-                      <span className="text-foreground">{m.modalidad}</span>
-                      <span className="font-mono text-muted-foreground">{m.total} ({pct}%)</span>
+                    <div className="flex justify-between gap-2 text-xs font-semibold">
+                      <span className="text-foreground truncate" title={m.modalidad}>{m.modalidad}</span>
+                      <span className="font-mono text-muted-foreground flex-shrink-0">{m.total} ({pct}%)</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-secondary overflow-hidden">
                       <div

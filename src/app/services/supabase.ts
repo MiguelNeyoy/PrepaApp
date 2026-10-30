@@ -1,11 +1,27 @@
 import { createClient } from "@supabase/supabase-js";
-import { MESES_ABR, PREPARATORIAS, COSTO_BASE_CERTIFICADO_DEFAULT, fmtDate, getCicloEscolarAnioFin, getCicloEscolarAnioFinFromPeriodo, getCicloEscolarLabel, getDefaultCarreraCodigo, loadSavedCostoBase, saveCostoBaseToLocal } from "../domain";
+import {
+  FACULTADES_LICENCIATURA,
+  MESES_ABR,
+  PREPARATORIAS,
+  UNIDADES_ACADEMICAS,
+  COSTO_BASE_CERTIFICADO_DEFAULT,
+  fmtDate,
+  getCicloEscolarAnioFin,
+  getCicloEscolarAnioFinFromPeriodo,
+  getCicloEscolarLabel,
+  getDefaultCarreraCodigo,
+  getDivisionFromClave,
+  loadSavedCostoBase,
+  saveCostoBaseToLocal,
+} from "../domain";
 import type {
+  AccesoDivision,
   Account,
   Alumno,
   AlumnoBulkChanges,
   Catalogos,
   CycleSummary,
+  DivisionAcademica,
   EstadoTramite,
   ManagedProfile,
   ManagedRole,
@@ -16,28 +32,49 @@ import type {
   Turno,
 } from "../domain";
 
+const IS_DEV = Boolean(import.meta.env.DEV);
+
 const rawSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
 const supabaseUrl = rawSupabaseUrl.replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
 const supabaseKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
 
+// En producción limpiamos cualquier bandera residual de modo mock guardada previamente
+if (!IS_DEV && typeof window !== "undefined") {
+  window.localStorage.removeItem("app_force_mock");
+  window.localStorage.removeItem("app_mock_division");
+}
+
 const forceMock =
-  import.meta.env.VITE_USE_MOCK === "true" ||
-  import.meta.env.VITE_USE_MOCK === "1" ||
-  (typeof window !== "undefined" && window.localStorage.getItem("app_force_mock") === "true");
+  IS_DEV &&
+  (import.meta.env.VITE_USE_MOCK === "true" ||
+    import.meta.env.VITE_USE_MOCK === "1" ||
+    (typeof window !== "undefined" && window.localStorage.getItem("app_force_mock") === "true"));
 
-export let isMockMode = Boolean(forceMock || !supabaseUrl || !supabaseKey);
+export let isMockMode = IS_DEV && Boolean(forceMock || !supabaseUrl || !supabaseKey);
 
-export function enableMockMode() {
+export function enableMockMode(mockDivision?: AccesoDivision) {
+  if (!IS_DEV) return;
   isMockMode = true;
   if (typeof window !== "undefined") {
+    window.localStorage.removeItem("app_mock_signed_out");
     window.localStorage.setItem("app_force_mock", "true");
+    if (mockDivision) {
+      window.localStorage.setItem("app_mock_division", mockDivision);
+    }
   }
 }
 
 export function disableMockMode() {
-  isMockMode = !supabaseUrl || !supabaseKey;
+  isMockMode = IS_DEV && Boolean(!supabaseUrl || !supabaseKey);
   if (typeof window !== "undefined") {
     window.localStorage.removeItem("app_force_mock");
+    window.localStorage.removeItem("app_mock_division");
+  }
+}
+
+function assertSupabaseConfigured() {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Falta configurar la conexión a Supabase (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY).");
   }
 }
 
@@ -50,11 +87,22 @@ export const supabase = supabaseUrl && supabaseKey
     })
   : (null as unknown as ReturnType<typeof createClient>);
 
+function normalizeAccesoDivision(
+  rawDivision?: string | null,
+  role?: "admin" | "operador" | "consulta"
+): AccesoDivision {
+  if (rawDivision === "bachillerato" || rawDivision === "licenciatura" || rawDivision === "ambas") {
+    return rawDivision;
+  }
+  return role === "admin" ? "ambas" : "bachillerato";
+}
+
 type ProfileRow = {
   id: string;
   email: string | null;
   display_name: string;
   role: "admin" | "operador" | "consulta";
+  division?: AccesoDivision | null;
   active: boolean;
 };
 
@@ -73,6 +121,7 @@ type PreparatoriaRow = {
   clave: string;
   nombre: string;
   modalidades?: string[];
+  division?: DivisionAcademica | null;
   activo: boolean;
 };
 
@@ -131,6 +180,7 @@ type SolicitudDetalleRow = {
   periodo_mes?: number;
   anio?: number;
   periodo_anio?: number;
+  division?: DivisionAcademica | null;
 };
 
 type SupabaseDbError = {
@@ -167,6 +217,7 @@ function mapManagedProfile(row: ProfileAdminRow): ManagedProfile {
     email: row.email ?? "",
     displayName: row.display_name,
     role: row.role,
+    division: normalizeAccesoDivision(row.division, row.role),
     active: row.active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -214,9 +265,10 @@ const DEFAULT_MOCK_ALUMNOS: Alumno[] = [
     cartaPorte: "",
     localizacion: "Mazatlán",
     observaciones: "Documentación completa y cotejada.",
-    estado: "entregado" as EstadoTramite,
+    estado: "aceptado",
     mes: MOCK_CURRENT_MONTH,
     anio: MOCK_CURRENT_YEAR,
+    division: "bachillerato",
   },
   {
     id: "al-8210-002",
@@ -365,11 +417,188 @@ const DEFAULT_MOCK_ALUMNOS: Alumno[] = [
     estado: "aceptado",
     mes: MOCK_CURRENT_MONTH,
     anio: MOCK_CURRENT_YEAR,
+    division: "bachillerato",
+  },
+  {
+    id: "al-4800-001",
+    numeroCuenta: "20194801",
+    nombre: "MENDÍVIL CASTRO ALEJANDRA",
+    curp: "MECA010315MSLRRLA9",
+    folioRecibo: "15201044",
+    cicloRecibo: "2025-2026",
+    preparatoriaClave: "4800",
+    preparatoriaNombre: "FAC. DE INFORMÁTICA MAZATLÁN",
+    modalidad: "LICENCIATURA EN INFORMÁTICA",
+    carreraCodigo: "",
+    planEstudio: "20",
+    microfilm: "480020194801",
+    revisoHistorial: true,
+    revisoKardex: true,
+    turno: "Matutino",
+    tipoCertificado: "Digital",
+    tramite: "Certificado",
+    tramiteId: "certificado",
+    pago: 500,
+    email: "alejandramendivil@uas.edu.mx",
+    telefono: "6691457820",
+    telefonoAlt: "",
+    generacion: "2020-2025",
+    recibio: fmtDate(11, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    ingreso: fmtDate(11, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    recibido: fmtDate(12, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    envio: "",
+    reenvio: false,
+    cartaPoder: "",
+    cartaPorte: "",
+    localizacion: "Mazatlán",
+    observaciones: "Expediente completo de licenciatura.",
+    estado: "recibido",
+    mes: MOCK_CURRENT_MONTH,
+    anio: MOCK_CURRENT_YEAR,
+    division: "licenciatura",
+  },
+  {
+    id: "al-4520-002",
+    numeroCuenta: "20194522",
+    nombre: "VALDEZ LIZÁRRAGA ROBERTO",
+    curp: "VALR001122HSLVZRA4",
+    folioRecibo: "15201899",
+    cicloRecibo: "2025-2026",
+    preparatoriaClave: "4520",
+    preparatoriaNombre: "FAC. DE DERECHO MAZATLÁN",
+    modalidad: "LICENCIATURA EN DERECHO",
+    carreraCodigo: "",
+    planEstudio: "18",
+    microfilm: "452020194522",
+    revisoHistorial: true,
+    revisoKardex: true,
+    turno: "Vespertino",
+    tipoCertificado: "Físico",
+    tramite: "Certificado",
+    tramiteId: "certificado",
+    pago: 500,
+    email: "roberto.valdez@uas.edu.mx",
+    telefono: "6691889021",
+    telefonoAlt: "",
+    generacion: "2020-2025",
+    recibio: fmtDate(14, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    ingreso: fmtDate(14, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    recibido: "",
+    envio: "",
+    reenvio: false,
+    cartaPoder: "",
+    cartaPorte: "",
+    localizacion: "Mazatlán",
+    observaciones: "",
+    estado: "pendiente",
+    mes: MOCK_CURRENT_MONTH,
+    anio: MOCK_CURRENT_YEAR,
+    division: "licenciatura",
+  },
+  {
+    id: "al-5820-003",
+    numeroCuenta: "20195823",
+    nombre: "OSUNA TIRADO MARÍA FERNANDA",
+    curp: "OSTM010704MSLSNRA1",
+    folioRecibo: "15202310",
+    cicloRecibo: "2025-2026",
+    preparatoriaClave: "5820",
+    preparatoriaNombre: "FAC. DE ENFERMERÍA MAZATLÁN",
+    modalidad: "LICENCIATURA EN ENFERMERÍA",
+    carreraCodigo: "",
+    planEstudio: "19",
+    microfilm: "582020195823",
+    revisoHistorial: true,
+    revisoKardex: true,
+    turno: "Matutino",
+    tipoCertificado: "Digital",
+    tramite: "Certificado",
+    tramiteId: "certificado",
+    pago: 500,
+    email: "maria.osuna@uas.edu.mx",
+    telefono: "6691904412",
+    telefonoAlt: "",
+    generacion: "2020-2025",
+    recibio: fmtDate(16, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    ingreso: fmtDate(16, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    recibido: fmtDate(17, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    envio: fmtDate(18, MOCK_CURRENT_MONTH, MOCK_CURRENT_YEAR),
+    reenvio: false,
+    cartaPoder: "",
+    cartaPorte: "",
+    localizacion: "Culiacán",
+    observaciones: "Enviado en corte URS.",
+    estado: "enviado",
+    mes: MOCK_CURRENT_MONTH,
+    anio: MOCK_CURRENT_YEAR,
+    division: "licenciatura",
   },
 ];
 
 const LOCAL_STORAGE_KEY_ALUMNOS = "app-titulacion-prepa-alumnos";
 const LOCAL_STORAGE_KEY_PREPAS = "app-titulacion-prepa-catalogos";
+const LOCAL_STORAGE_KEY_PROFILES = "app-titulacion-mock-profiles";
+
+const DEFAULT_MOCK_PROFILES: ManagedProfile[] = [
+  {
+    id: "mock-admin-01",
+    email: "ventanilla.admin@uas.edu.mx",
+    displayName: "Administrador General",
+    role: "admin",
+    division: "ambas",
+    active: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "mock-bach-01",
+    email: "ventanilla.prepa@uas.edu.mx",
+    displayName: "Encargado Bachillerato",
+    role: "operador",
+    division: "bachillerato",
+    active: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "mock-lic-01",
+    email: "ventanilla.licenciatura@uas.edu.mx",
+    displayName: "Encargada Licenciatura",
+    role: "operador",
+    division: "licenciatura",
+    active: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+function hydrateAlumnoRecord(a: Alumno): Alumno {
+  const seed = DEFAULT_MOCK_ALUMNOS.find(s => s.id === a.id);
+  const division = a.division ?? getDivisionFromClave(a.preparatoriaClave);
+  const estadoValido: EstadoTramite =
+    a.estado === "pendiente" ||
+    a.estado === "recibido" ||
+    a.estado === "enviado" ||
+    a.estado === "aceptado" ||
+    a.estado === "rechazado"
+      ? a.estado
+      : "aceptado";
+  return {
+    ...(seed ?? {}),
+    ...a,
+    estado: estadoValido,
+    curp: a.curp ?? seed?.curp ?? "",
+    folioRecibo: a.folioRecibo ?? seed?.folioRecibo ?? "",
+    cicloRecibo:
+      a.cicloRecibo ??
+      seed?.cicloRecibo ??
+      getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(a.mes, a.anio)),
+    microfilm: a.microfilm ?? seed?.microfilm ?? "",
+    revisoHistorial: a.revisoHistorial ?? seed?.revisoHistorial ?? true,
+    revisoKardex: a.revisoKardex ?? seed?.revisoKardex ?? true,
+    division,
+  };
+}
 
 function loadLocalAlumnos(): Alumno[] {
   if (typeof window === "undefined") return DEFAULT_MOCK_ALUMNOS;
@@ -379,7 +608,15 @@ function loadLocalAlumnos(): Alumno[] {
       window.localStorage.setItem(LOCAL_STORAGE_KEY_ALUMNOS, JSON.stringify(DEFAULT_MOCK_ALUMNOS));
       return DEFAULT_MOCK_ALUMNOS;
     }
-    return JSON.parse(raw);
+    const parsed = (JSON.parse(raw) as Alumno[]).map(hydrateAlumnoRecord);
+    const hasLic = parsed.some(a => (a.division ?? getDivisionFromClave(a.preparatoriaClave)) === "licenciatura");
+    if (!hasLic) {
+      const licSeeds = DEFAULT_MOCK_ALUMNOS.filter(a => a.division === "licenciatura");
+      const merged = [...parsed, ...licSeeds];
+      window.localStorage.setItem(LOCAL_STORAGE_KEY_ALUMNOS, JSON.stringify(merged));
+      return merged;
+    }
+    return parsed;
   } catch {
     return DEFAULT_MOCK_ALUMNOS;
   }
@@ -393,16 +630,27 @@ function saveLocalAlumnos(alumnos: Alumno[]) {
 }
 
 function loadLocalPreparatorias(): Preparatoria[] {
-  if (typeof window === "undefined") return PREPARATORIAS;
+  if (typeof window === "undefined") return UNIDADES_ACADEMICAS;
   try {
     const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY_PREPAS);
     if (!raw) {
-      window.localStorage.setItem(LOCAL_STORAGE_KEY_PREPAS, JSON.stringify(PREPARATORIAS));
-      return PREPARATORIAS;
+      window.localStorage.setItem(LOCAL_STORAGE_KEY_PREPAS, JSON.stringify(UNIDADES_ACADEMICAS));
+      return UNIDADES_ACADEMICAS;
     }
-    return JSON.parse(raw);
+    const saved = (JSON.parse(raw) as Preparatoria[]).map(p => ({
+      ...p,
+      division: p.division ?? getDivisionFromClave(p.clave),
+    }));
+    const existingClaves = new Set(saved.map(p => p.clave));
+    const missingUnits = UNIDADES_ACADEMICAS.filter(u => !existingClaves.has(u.clave));
+    if (missingUnits.length > 0) {
+      const merged = [...saved, ...missingUnits];
+      window.localStorage.setItem(LOCAL_STORAGE_KEY_PREPAS, JSON.stringify(merged));
+      return merged;
+    }
+    return saved;
   } catch {
-    return PREPARATORIAS;
+    return UNIDADES_ACADEMICAS;
   }
 }
 
@@ -413,9 +661,47 @@ function saveLocalPreparatorias(prepas: Preparatoria[]) {
   } catch {}
 }
 
+function loadLocalProfiles(): ManagedProfile[] {
+  if (typeof window === "undefined") return DEFAULT_MOCK_PROFILES;
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY_PROFILES);
+    if (!raw) {
+      window.localStorage.setItem(LOCAL_STORAGE_KEY_PROFILES, JSON.stringify(DEFAULT_MOCK_PROFILES));
+      return DEFAULT_MOCK_PROFILES;
+    }
+    const saved = (JSON.parse(raw) as ManagedProfile[]).map(p => ({
+      ...p,
+      division: normalizeAccesoDivision(p.division, p.role),
+    }));
+    return saved.length > 0 ? saved : DEFAULT_MOCK_PROFILES;
+  } catch {
+    return DEFAULT_MOCK_PROFILES;
+  }
+}
+
+function saveLocalProfiles(profiles: ManagedProfile[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LOCAL_STORAGE_KEY_PROFILES, JSON.stringify(profiles));
+  } catch {}
+}
+
 // --------------------------------------------------------------------------------
 // Catalog API Functions
 // --------------------------------------------------------------------------------
+
+function ensureAllDivisionsInCatalog(prepas: Preparatoria[]): Preparatoria[] {
+  const hasBach = prepas.some(p => (p.division ?? getDivisionFromClave(p.clave)) === "bachillerato");
+  const hasLic = prepas.some(p => (p.division ?? getDivisionFromClave(p.clave)) === "licenciatura");
+  let result = [...prepas];
+  if (!hasBach) {
+    result = [...result, ...PREPARATORIAS];
+  }
+  if (!hasLic) {
+    result = [...result, ...FACULTADES_LICENCIATURA];
+  }
+  return result;
+}
 
 export async function fetchCatalogos(): Promise<Catalogos> {
   if (isMockMode) {
@@ -426,25 +712,48 @@ export async function fetchCatalogos(): Promise<Catalogos> {
     };
   }
 
-  const [prepasResult, tramitesResult] = await Promise.all([
-    supabase.from("preparatorias").select("clave,nombre,modalidades,activo").eq("activo", true).order("clave"),
+  assertSupabaseConfigured();
+
+  let [prepasResult, tramitesResult] = await Promise.all([
+    supabase.from("preparatorias").select("clave,nombre,modalidades,division,activo").eq("activo", true).order("clave"),
     supabase.from("tramites").select("id,nombre,activo").eq("activo", true).order("nombre"),
   ]);
 
-  if (prepasResult.error) {
-    console.warn("Error consultando preparatorias de Supabase, usando catálogo base:", prepasResult.error);
-    return {
-      preparatorias: loadLocalPreparatorias(),
-      tramites: [{ id: "certificado", nombre: "Certificado", activo: true }],
-    };
+  if (prepasResult.error && isMissingColumnError(prepasResult.error)) {
+    prepasResult = await supabase
+      .from("preparatorias")
+      .select("clave,nombre,modalidades,activo")
+      .eq("activo", true)
+      .order("clave");
   }
 
-  const prepas: Preparatoria[] = (prepasResult.data ?? []).map((row: PreparatoriaRow) => ({
-    clave: row.clave,
-    nombre: row.nombre,
-    modalidades: (row.modalidades as ModalidadPrepa[]) || ["Escolarizada"],
-    activo: row.activo,
-  }));
+  if (prepasResult.error) {
+    if (IS_DEV) {
+      console.warn("Error consultando unidades académicas de Supabase en dev, usando catálogo local:", prepasResult.error);
+      return {
+        preparatorias: loadLocalPreparatorias().filter(p => p.activo !== false),
+        tramites: [{ id: "certificado", nombre: "Certificado", activo: true }],
+      };
+    }
+    throw prepasResult.error;
+  }
+
+  const prepas: Preparatoria[] = (prepasResult.data ?? []).map((row: PreparatoriaRow) => {
+    const division = row.division ?? getDivisionFromClave(row.clave);
+    const defaultModalidades =
+      division === "licenciatura"
+        ? FACULTADES_LICENCIATURA.find(f => f.clave === row.clave)?.modalidades ?? []
+        : (["Escolarizada"] as ModalidadPrepa[]);
+    return {
+      clave: row.clave,
+      nombre: row.nombre,
+      modalidades: (row.modalidades as ModalidadPrepa[])?.length
+        ? (row.modalidades as ModalidadPrepa[])
+        : defaultModalidades,
+      division,
+      activo: row.activo,
+    };
+  });
 
   const tramites: TramiteCatalogo[] = (tramitesResult.data ?? [{ id: "certificado", nombre: "Certificado", activo: true }]).map(
     (row: TramiteRow) => ({
@@ -454,7 +763,10 @@ export async function fetchCatalogos(): Promise<Catalogos> {
     })
   );
 
-  return { preparatorias: prepas.length > 0 ? prepas : loadLocalPreparatorias(), tramites };
+  return {
+    preparatorias: ensureAllDivisionsInCatalog(prepas),
+    tramites,
+  };
 }
 
 export async function fetchCatalogosAdmin(): Promise<Catalogos> {
@@ -465,24 +777,46 @@ export async function fetchCatalogosAdmin(): Promise<Catalogos> {
     };
   }
 
-  const [prepasResult, tramitesResult] = await Promise.all([
-    supabase.from("preparatorias").select("clave,nombre,modalidades,activo").order("clave"),
+  assertSupabaseConfigured();
+
+  let [prepasResult, tramitesResult] = await Promise.all([
+    supabase.from("preparatorias").select("clave,nombre,modalidades,division,activo").order("clave"),
     supabase.from("tramites").select("id,nombre,activo").order("nombre"),
   ]);
 
-  if (prepasResult.error) {
-    return {
-      preparatorias: loadLocalPreparatorias(),
-      tramites: [{ id: "certificado", nombre: "Certificado", activo: true }],
-    };
+  if (prepasResult.error && isMissingColumnError(prepasResult.error)) {
+    prepasResult = await supabase
+      .from("preparatorias")
+      .select("clave,nombre,modalidades,activo")
+      .order("clave");
   }
 
-  const prepas: Preparatoria[] = (prepasResult.data ?? []).map((row: PreparatoriaRow) => ({
-    clave: row.clave,
-    nombre: row.nombre,
-    modalidades: (row.modalidades as ModalidadPrepa[]) || ["Escolarizada"],
-    activo: row.activo,
-  }));
+  if (prepasResult.error) {
+    if (IS_DEV) {
+      return {
+        preparatorias: loadLocalPreparatorias(),
+        tramites: [{ id: "certificado", nombre: "Certificado", activo: true }],
+      };
+    }
+    throw prepasResult.error;
+  }
+
+  const prepas: Preparatoria[] = (prepasResult.data ?? []).map((row: PreparatoriaRow) => {
+    const division = row.division ?? getDivisionFromClave(row.clave);
+    const defaultModalidades =
+      division === "licenciatura"
+        ? FACULTADES_LICENCIATURA.find(f => f.clave === row.clave)?.modalidades ?? []
+        : (["Escolarizada"] as ModalidadPrepa[]);
+    return {
+      clave: row.clave,
+      nombre: row.nombre,
+      modalidades: (row.modalidades as ModalidadPrepa[])?.length
+        ? (row.modalidades as ModalidadPrepa[])
+        : defaultModalidades,
+      division,
+      activo: row.activo,
+    };
+  });
 
   const tramites: TramiteCatalogo[] = (tramitesResult.data ?? [{ id: "certificado", nombre: "Certificado", activo: true }]).map(
     (row: TramiteRow) => ({
@@ -492,7 +826,10 @@ export async function fetchCatalogosAdmin(): Promise<Catalogos> {
     })
   );
 
-  return { preparatorias: prepas.length > 0 ? prepas : loadLocalPreparatorias(), tramites };
+  return {
+    preparatorias: ensureAllDivisionsInCatalog(prepas),
+    tramites,
+  };
 }
 
 export async function fetchCostoBase(): Promise<number> {
@@ -536,7 +873,11 @@ function mapSolicitud(row: SolicitudDetalleRow, catalogos: Catalogos): Alumno {
   const prepa = catalogos.preparatorias.find(p => p.clave === row.preparatoria_clave);
   const mes = Number(row.periodo_mes ?? row.mes ?? (new Date().getMonth() + 1));
   const anio = Number(row.periodo_anio ?? row.anio ?? new Date().getFullYear());
-  const modalidad = row.modalidad || "Escolarizada";
+  const division = row.division ?? prepa?.division ?? getDivisionFromClave(row.preparatoria_clave);
+  const modalidad =
+    row.modalidad ||
+    prepa?.modalidades?.[0] ||
+    (division === "licenciatura" ? "" : "Escolarizada");
   return {
     id: row.id,
     numeroCuenta: row.numero_cuenta || row.matricula || "",
@@ -547,7 +888,7 @@ function mapSolicitud(row: SolicitudDetalleRow, catalogos: Catalogos): Alumno {
     preparatoriaClave: row.preparatoria_clave || "",
     preparatoriaNombre: row.preparatoria_nombre || prepa?.nombre || row.preparatoria_clave || "",
     modalidad,
-    carreraCodigo: row.carrera_codigo ?? getDefaultCarreraCodigo(modalidad),
+    carreraCodigo: row.carrera_codigo ?? getDefaultCarreraCodigo(modalidad, division),
     planEstudio: row.plan_estudio ?? "18",
     microfilm: row.microfilm ?? "",
     revisoHistorial: row.reviso_historial ?? true,
@@ -573,6 +914,7 @@ function mapSolicitud(row: SolicitudDetalleRow, catalogos: Catalogos): Alumno {
     estado: row.estado,
     mes,
     anio,
+    division,
   };
 }
 
@@ -606,18 +948,22 @@ function buildSolicitudBasePayload(alumno: Alumno): Record<string, unknown> {
 }
 
 function buildSolicitudExtendedPayload(alumno: Alumno): Record<string, unknown> {
+  const division = alumno.division ?? getDivisionFromClave(alumno.preparatoriaClave);
+  const rawCarrera =
+    alumno.carreraCodigo !== undefined && String(alumno.carreraCodigo).trim() !== ""
+      ? String(alumno.carreraCodigo).trim()
+      : String(getDefaultCarreraCodigo(alumno.modalidad, division));
   return {
     ...buildSolicitudBasePayload(alumno),
     curp: alumno.curp?.trim().toUpperCase() || null,
     folio_recibo: alumno.folioRecibo?.trim() || null,
     ciclo_recibo: alumno.cicloRecibo?.trim() || null,
-    carrera_codigo: alumno.carreraCodigo !== undefined && String(alumno.carreraCodigo).trim() !== ""
-      ? String(alumno.carreraCodigo).trim()
-      : String(getDefaultCarreraCodigo(alumno.modalidad)),
+    carrera_codigo: rawCarrera || null,
     plan_estudio: alumno.planEstudio?.trim() || "18",
     microfilm: alumno.microfilm?.trim().toUpperCase() || null,
     reviso_historial: alumno.revisoHistorial ?? true,
     reviso_kardex: alumno.revisoKardex ?? true,
+    division,
   };
 }
 
@@ -632,6 +978,8 @@ export async function fetchAlumnos(catalogos: Catalogos): Promise<Alumno[]> {
     return loadLocalAlumnos();
   }
 
+  assertSupabaseConfigured();
+
   const { data, error } = await supabase
     .from("solicitudes_titulacion")
     .select("*")
@@ -640,77 +988,136 @@ export async function fetchAlumnos(catalogos: Catalogos): Promise<Alumno[]> {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.warn("Error conectando a solicitudes de Supabase, usando almacenamiento local:", error);
-    return loadLocalAlumnos();
+    if (IS_DEV) {
+      console.warn("Error conectando a solicitudes de Supabase en dev, usando almacenamiento local:", error);
+      return loadLocalAlumnos();
+    }
+    throw error;
   }
 
   return ((data ?? []) as SolicitudDetalleRow[]).map(row => mapSolicitud(row, catalogos));
 }
 
 export async function createAlumno(alumno: Alumno, catalogos: Catalogos): Promise<Alumno> {
+  const division = alumno.division ?? getDivisionFromClave(alumno.preparatoriaClave);
+  const normalizedAlumno: Alumno = { ...alumno, division };
+
   if (isMockMode) {
     const list = loadLocalAlumnos();
     const newAlumno: Alumno = {
-      ...alumno,
-      id: `prepa-${Date.now()}`,
+      ...normalizedAlumno,
+      id: `${division}-${Date.now()}`,
     };
     list.unshift(newAlumno);
     saveLocalAlumnos(list);
     return newAlumno;
   }
 
+  assertSupabaseConfigured();
+
   let { data, error } = await supabase
     .from("solicitudes_titulacion")
-    .insert(buildSolicitudExtendedPayload(alumno))
+    .insert(buildSolicitudExtendedPayload(normalizedAlumno))
     .select("id")
     .single<{ id: string }>();
 
   if (error && isMissingColumnError(error)) {
-    const retry = await supabase
+    const { division: _omitDivision, ...withoutDivision } = buildSolicitudExtendedPayload(normalizedAlumno);
+    const retryExtended = await supabase
       .from("solicitudes_titulacion")
-      .insert(buildSolicitudBasePayload(alumno))
+      .insert(withoutDivision)
       .select("id")
       .single<{ id: string }>();
-    data = retry.data;
-    error = retry.error;
+    if (!retryExtended.error) {
+      data = retryExtended.data;
+      error = null;
+    } else if (isMissingColumnError(retryExtended.error)) {
+      const retryBase = await supabase
+        .from("solicitudes_titulacion")
+        .insert(buildSolicitudBasePayload(normalizedAlumno))
+        .select("id")
+        .single<{ id: string }>();
+      data = retryBase.data;
+      error = retryBase.error;
+    } else {
+      error = retryExtended.error;
+    }
   }
 
   if (error) throw error;
 
   const next = await fetchAlumnos(catalogos);
   const created = next.find(item => item.id === data?.id);
-  return created ? { ...alumno, ...created, curp: created.curp || alumno.curp, folioRecibo: created.folioRecibo || alumno.folioRecibo, cicloRecibo: created.cicloRecibo || alumno.cicloRecibo, carreraCodigo: created.carreraCodigo ?? alumno.carreraCodigo, planEstudio: created.planEstudio || alumno.planEstudio, microfilm: created.microfilm || alumno.microfilm } : alumno;
+  return created
+    ? {
+        ...normalizedAlumno,
+        ...created,
+        curp: created.curp || normalizedAlumno.curp,
+        folioRecibo: created.folioRecibo || normalizedAlumno.folioRecibo,
+        cicloRecibo: created.cicloRecibo || normalizedAlumno.cicloRecibo,
+        carreraCodigo: created.carreraCodigo ?? normalizedAlumno.carreraCodigo,
+        planEstudio: created.planEstudio || normalizedAlumno.planEstudio,
+        microfilm: created.microfilm || normalizedAlumno.microfilm,
+      }
+    : normalizedAlumno;
 }
 
 export async function updateAlumno(alumno: Alumno, catalogos: Catalogos): Promise<Alumno> {
+  const division = alumno.division ?? getDivisionFromClave(alumno.preparatoriaClave);
+  const normalizedAlumno: Alumno = { ...alumno, division };
+
   if (isMockMode) {
     const list = loadLocalAlumnos();
-    const index = list.findIndex(a => a.id === alumno.id);
+    const index = list.findIndex(a => a.id === normalizedAlumno.id);
     if (index >= 0) {
-      list[index] = { ...alumno };
+      list[index] = { ...normalizedAlumno };
       saveLocalAlumnos(list);
     }
-    return alumno;
+    return normalizedAlumno;
   }
+
+  assertSupabaseConfigured();
 
   let { error } = await supabase
     .from("solicitudes_titulacion")
-    .update(buildSolicitudExtendedPayload(alumno))
-    .eq("id", alumno.id);
+    .update(buildSolicitudExtendedPayload(normalizedAlumno))
+    .eq("id", normalizedAlumno.id);
 
   if (error && isMissingColumnError(error)) {
-    const retry = await supabase
+    const { division: _omitDivision, ...withoutDivision } = buildSolicitudExtendedPayload(normalizedAlumno);
+    const retryExtended = await supabase
       .from("solicitudes_titulacion")
-      .update(buildSolicitudBasePayload(alumno))
-      .eq("id", alumno.id);
-    error = retry.error;
+      .update(withoutDivision)
+      .eq("id", normalizedAlumno.id);
+    if (!retryExtended.error) {
+      error = null;
+    } else if (isMissingColumnError(retryExtended.error)) {
+      const retryBase = await supabase
+        .from("solicitudes_titulacion")
+        .update(buildSolicitudBasePayload(normalizedAlumno))
+        .eq("id", normalizedAlumno.id);
+      error = retryBase.error;
+    } else {
+      error = retryExtended.error;
+    }
   }
 
   if (error) throw error;
 
   const next = await fetchAlumnos(catalogos);
-  const updated = next.find(item => item.id === alumno.id);
-  return updated ? { ...alumno, ...updated, curp: updated.curp || alumno.curp, folioRecibo: updated.folioRecibo || alumno.folioRecibo, cicloRecibo: updated.cicloRecibo || alumno.cicloRecibo, carreraCodigo: updated.carreraCodigo ?? alumno.carreraCodigo, planEstudio: updated.planEstudio || alumno.planEstudio, microfilm: updated.microfilm || alumno.microfilm } : alumno;
+  const updated = next.find(item => item.id === normalizedAlumno.id);
+  return updated
+    ? {
+        ...normalizedAlumno,
+        ...updated,
+        curp: updated.curp || normalizedAlumno.curp,
+        folioRecibo: updated.folioRecibo || normalizedAlumno.folioRecibo,
+        cicloRecibo: updated.cicloRecibo || normalizedAlumno.cicloRecibo,
+        carreraCodigo: updated.carreraCodigo ?? normalizedAlumno.carreraCodigo,
+        planEstudio: updated.planEstudio || normalizedAlumno.planEstudio,
+        microfilm: updated.microfilm || normalizedAlumno.microfilm,
+      }
+    : normalizedAlumno;
 }
 
 export async function updateAlumnosBulk(ids: string[], changes: AlumnoBulkChanges): Promise<string[]> {
@@ -736,6 +1143,8 @@ export async function updateAlumnosBulk(ids: string[], changes: AlumnoBulkChange
     saveLocalAlumnos(list);
     return uniqueIds;
   }
+
+  assertSupabaseConfigured();
 
   const payload: Record<string, unknown> = {};
   if (changes.estado !== undefined) payload.estado = changes.estado;
@@ -766,6 +1175,8 @@ export async function deleteAlumno(id: string) {
     return;
   }
 
+  assertSupabaseConfigured();
+
   const { error } = await supabase
     .from("solicitudes_titulacion")
     .delete()
@@ -775,51 +1186,83 @@ export async function deleteAlumno(id: string) {
 }
 
 // --------------------------------------------------------------------------------
-// Preparatorias Management CRUD
+// Preparatorias / Unidades Académicas Management CRUD
 // --------------------------------------------------------------------------------
 
 export async function createPreparatoria(prepa: Preparatoria) {
+  const division = prepa.division ?? getDivisionFromClave(prepa.clave);
   if (isMockMode) {
     const prepas = loadLocalPreparatorias();
     if (prepas.some(p => p.clave === prepa.clave)) {
-      throw new Error(`Ya existe una preparatoria con la clave ${prepa.clave}`);
+      throw new Error(`Ya existe una unidad académica con la clave ${prepa.clave}`);
     }
-    prepas.push({ ...prepa, activo: prepa.activo ?? true });
+    prepas.push({ ...prepa, division, activo: prepa.activo ?? true });
     saveLocalPreparatorias(prepas);
     return;
   }
 
-  const { error } = await supabase
+  assertSupabaseConfigured();
+
+  let { error } = await supabase
     .from("preparatorias")
     .insert({
       clave: prepa.clave.trim(),
       nombre: prepa.nombre.trim(),
       modalidades: prepa.modalidades,
+      division,
       activo: prepa.activo ?? true,
     });
+
+  if (error && isMissingColumnError(error)) {
+    const retry = await supabase
+      .from("preparatorias")
+      .insert({
+        clave: prepa.clave.trim(),
+        nombre: prepa.nombre.trim(),
+        modalidades: prepa.modalidades,
+        activo: prepa.activo ?? true,
+      });
+    error = retry.error;
+  }
 
   if (error) throw error;
 }
 
 export async function updatePreparatoria(prepa: Preparatoria) {
+  const division = prepa.division ?? getDivisionFromClave(prepa.clave);
   if (isMockMode) {
     const prepas = loadLocalPreparatorias();
     const index = prepas.findIndex(p => p.clave === prepa.clave);
     if (index >= 0) {
-      prepas[index] = { ...prepa, activo: prepa.activo ?? true };
+      prepas[index] = { ...prepa, division, activo: prepa.activo ?? true };
       saveLocalPreparatorias(prepas);
     }
     return;
   }
 
-  const { error } = await supabase
+  assertSupabaseConfigured();
+
+  let { error } = await supabase
     .from("preparatorias")
     .update({
       nombre: prepa.nombre.trim(),
       modalidades: prepa.modalidades,
+      division,
       activo: prepa.activo ?? true,
     })
     .eq("clave", prepa.clave);
+
+  if (error && isMissingColumnError(error)) {
+    const retry = await supabase
+      .from("preparatorias")
+      .update({
+        nombre: prepa.nombre.trim(),
+        modalidades: prepa.modalidades,
+        activo: prepa.activo ?? true,
+      })
+      .eq("clave", prepa.clave);
+    error = retry.error;
+  }
 
   if (error) throw error;
 }
@@ -845,6 +1288,7 @@ export async function deletePreparatoria(clave: string) {
 
 export async function createTramite(tramite: TramiteCatalogo) {
   if (isMockMode) return;
+  assertSupabaseConfigured();
   const { error } = await supabase
     .from("tramites")
     .insert({
@@ -857,6 +1301,7 @@ export async function createTramite(tramite: TramiteCatalogo) {
 
 export async function updateTramite(tramite: TramiteCatalogo) {
   if (isMockMode) return;
+  assertSupabaseConfigured();
   const { error } = await supabase
     .from("tramites")
     .update({
@@ -869,6 +1314,7 @@ export async function updateTramite(tramite: TramiteCatalogo) {
 
 export async function deleteTramite(id: string) {
   if (isMockMode) return;
+  assertSupabaseConfigured();
   const { error } = await supabase
     .from("tramites")
     .delete()
@@ -881,32 +1327,31 @@ export async function deleteTramite(id: string) {
 // --------------------------------------------------------------------------------
 
 export async function signInAdmin(email: string, password: string) {
-  if (email === "ventanilla.prepa@uas.edu.mx" && isMockMode) {
-    // En modo mock explicito con usuario de pruebas, permitir acceso instantaneo
+  const forceMockActive =
+    IS_DEV &&
+    isMockMode &&
+    ((typeof window !== "undefined" && window.localStorage.getItem("app_force_mock") === "true") ||
+      !supabaseUrl ||
+      !supabaseKey);
+
+  if (forceMockActive) {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("app_mock_signed_out");
+      window.localStorage.setItem("app_mock_email", email.trim().toLowerCase());
+    }
     return;
   }
 
-  // Si hay credenciales de Supabase configuradas, desactivar el modo mock para conectar a la nube
-  if (supabaseUrl && supabaseKey) {
-    disableMockMode();
-  }
+  disableMockMode();
+  assertSupabaseConfigured();
 
-  try {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  } catch (err: unknown) {
-    const msg = String(err && typeof err === "object" && "message" in err ? (err as { message?: string }).message : err).toLowerCase();
-    if (msg.includes("network") || msg.includes("fetch") || msg.includes("failed to fetch") || msg.includes("timeout")) {
-      console.warn("No se pudo conectar con el servidor de Supabase. Activando modo local/offline automáticamente:", err);
-      enableMockMode();
-      return;
-    }
-    throw err;
-  }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
 }
 
 export async function requestPasswordRecovery(email: string) {
   if (isMockMode) return;
+  assertSupabaseConfigured();
   const { error } = await supabase.auth.resetPasswordForEmail(email);
   if (error) throw error;
 }
@@ -926,6 +1371,7 @@ function getRecoveryToken(input: string) {
 
 export async function verifyPasswordRecoveryInput(email: string, recoveryInput: string) {
   if (isMockMode) return;
+  assertSupabaseConfigured();
   const { token, tokenHash } = getRecoveryToken(recoveryInput);
   if (!token && !tokenHash) throw new Error("El código o enlace de recuperación no es válido.");
 
@@ -937,6 +1383,7 @@ export async function verifyPasswordRecoveryInput(email: string, recoveryInput: 
 
 export async function updatePasswordFromRecovery(password: string) {
   if (isMockMode) return;
+  assertSupabaseConfigured();
   try {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
@@ -946,32 +1393,73 @@ export async function updatePasswordFromRecovery(password: string) {
 }
 
 export async function signOutAdmin() {
-  if (isMockMode) return;
+  if (isMockMode) {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("app_mock_signed_out", "true");
+      window.localStorage.removeItem("app_mock_email");
+    }
+    disableMockMode();
+    return;
+  }
+  assertSupabaseConfigured();
   await supabase.auth.signOut();
 }
 
 export async function getCurrentAccount(): Promise<Account | null> {
-  if (isMockMode) {
+  if (IS_DEV && isMockMode) {
+    if (typeof window !== "undefined" && window.localStorage.getItem("app_mock_signed_out") === "true") {
+      return null;
+    }
+
+    const profiles = loadLocalProfiles();
+    const mockEmail = typeof window !== "undefined" ? window.localStorage.getItem("app_mock_email") : null;
+    const mockDivision = typeof window !== "undefined"
+      ? (window.localStorage.getItem("app_mock_division") as AccesoDivision | null)
+      : null;
+
+    const matched =
+      (mockEmail ? profiles.find(p => p.email.toLowerCase() === mockEmail.toLowerCase()) : undefined) ??
+      (mockDivision ? profiles.find(p => p.division === mockDivision) : undefined) ??
+      profiles[0] ??
+      DEFAULT_MOCK_PROFILES[0];
+
+    if (!matched.active) {
+      throw new Error("La cuenta está desactivada.");
+    }
+
     return {
-      id: "mock-admin-01",
-      displayName: "Administrador Ventanilla",
-      email: "ventanilla.prepa@uas.edu.mx",
+      id: matched.id,
+      displayName: matched.displayName,
+      email: matched.email,
       password: "",
-      role: "admin",
+      role: matched.role,
+      division: normalizeAccesoDivision(matched.division, matched.role),
     };
   }
+
+  if (!supabaseUrl || !supabaseKey) return null;
 
   const { data: sessionData } = await supabase.auth.getSession();
   const user = sessionData.session?.user;
   if (!user) return null;
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("profiles")
-    .select("id,email,display_name,role,active")
+    .select("id,email,display_name,role,division,active")
     .eq("id", user.id)
     .single<ProfileRow>();
 
-  if (error) throw error;
+  if (error && isMissingColumnError(error)) {
+    const fallback = await supabase
+      .from("profiles")
+      .select("id,email,display_name,role,active")
+      .eq("id", user.id)
+      .single<ProfileRow>();
+    data = fallback.data;
+    error = fallback.error;
+  }
+
+  if (error || !data) throw error ?? new Error("No se encontró el perfil del usuario.");
   if (!data.active) throw new Error("La cuenta está desactivada.");
 
   return {
@@ -980,11 +1468,21 @@ export async function getCurrentAccount(): Promise<Account | null> {
     email: data.email ?? user.email ?? "",
     password: "",
     role: data.role,
+    division: normalizeAccesoDivision(data.division, data.role),
   };
 }
 
 export async function updateCurrentAccount(account: Account) {
-  if (isMockMode) return;
+  if (isMockMode) {
+    const profiles = loadLocalProfiles();
+    const next = profiles.map(p =>
+      p.id === account.id ? { ...p, displayName: account.displayName.trim(), updatedAt: new Date().toISOString() } : p
+    );
+    saveLocalProfiles(next);
+    return;
+  }
+
+  assertSupabaseConfigured();
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
   const user = userData.user;
@@ -1005,23 +1503,24 @@ export async function updateCurrentAccount(account: Account) {
 
 export async function fetchProfiles(): Promise<ManagedProfile[]> {
   if (isMockMode) {
-    return [
-      {
-        id: "mock-admin-01",
-        email: "ventanilla.prepa@uas.edu.mx",
-        displayName: "Administrador Ventanilla",
-        role: "admin",
-        active: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
+    return loadLocalProfiles();
   }
 
-  const { data, error } = await supabase
+  assertSupabaseConfigured();
+
+  let { data, error } = await supabase
     .from("profiles")
-    .select("id,email,display_name,role,active,created_at,updated_at")
+    .select("id,email,display_name,role,division,active,created_at,updated_at")
     .order("created_at", { ascending: false });
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await supabase
+      .from("profiles")
+      .select("id,email,display_name,role,active,created_at,updated_at")
+      .order("created_at", { ascending: false });
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) throw error;
   return ((data ?? []) as ProfileAdminRow[]).map(mapManagedProfile);
@@ -1031,36 +1530,78 @@ export async function createManagedUser(input: {
   email: string;
   displayName: string;
   role: ManagedRole;
+  division?: AccesoDivision;
 }): Promise<ManagedProfile> {
+  const role: ManagedRole = input.role === "admin" ? "admin" : "operador";
+  const division = normalizeAccesoDivision(input.division, role);
+  const cleanEmail = input.email.trim().toLowerCase();
+  const cleanName = input.displayName.trim();
+
   if (isMockMode) {
-    return {
+    const profiles = loadLocalProfiles();
+    if (profiles.some(p => p.email.toLowerCase() === cleanEmail)) {
+      throw new Error("Ya existe un usuario con ese correo electrónico.");
+    }
+    const now = new Date().toISOString();
+    const created: ManagedProfile = {
       id: `usr-${Date.now()}`,
-      email: input.email,
-      displayName: input.displayName,
-      role: input.role,
+      email: cleanEmail,
+      displayName: cleanName,
+      role,
+      division,
       active: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
+    saveLocalProfiles([created, ...profiles]);
+    return created;
   }
 
-  const role = input.role === "admin" ? "admin" : "operador";
+  assertSupabaseConfigured();
+
   const { data, error } = await supabase.functions.invoke("admin-create-user", {
     body: {
-      email: input.email.trim(),
-      displayName: input.displayName.trim(),
+      email: cleanEmail,
+      displayName: cleanName,
       role,
+      division,
     },
   });
 
   if (error) throw error;
   if (!data?.profile) throw new Error("El usuario se creó, pero la función no regresó el perfil.");
 
-  return mapManagedProfile(data.profile as ProfileAdminRow);
+  const createdRow = data.profile as ProfileAdminRow;
+  if (createdRow.division !== division) {
+    const { data: updatedRow, error: divisionError } = await supabase
+      .from("profiles")
+      .update({ division })
+      .eq("id", createdRow.id)
+      .select("id,email,display_name,role,division,active,created_at,updated_at")
+      .single<ProfileAdminRow>();
+
+    if (!divisionError && updatedRow) {
+      return mapManagedProfile(updatedRow);
+    }
+
+    if (divisionError && isMissingColumnError(divisionError) && division === "licenciatura") {
+      throw new Error(
+        "El usuario se creó, pero falta ejecutar la migración SQL (20261029_division_licenciatura_usuarios.sql) para guardar la división Licenciatura."
+      );
+    }
+  }
+
+  return mapManagedProfile({ ...createdRow, division });
 }
 
 export async function deleteManagedUser(userId: string) {
-  if (isMockMode) return;
+  if (isMockMode) {
+    const profiles = loadLocalProfiles().filter(p => p.id !== userId);
+    saveLocalProfiles(profiles);
+    return;
+  }
+
+  assertSupabaseConfigured();
   const { data, error } = await supabase.functions.invoke("admin-delete-user", {
     body: { userId },
   });
@@ -1071,38 +1612,65 @@ export async function deleteManagedUser(userId: string) {
 
 export async function updateProfileRoleActive(
   id: string,
-  changes: { displayName?: string; role?: ManagedRole; active?: boolean }
+  changes: { displayName?: string; role?: ManagedRole; division?: AccesoDivision; active?: boolean }
 ): Promise<ManagedProfile> {
   if (isMockMode) {
-    return {
+    const profiles = loadLocalProfiles();
+    const existing = profiles.find(p => p.id === id);
+    const nextRole = changes.role ?? existing?.role ?? "operador";
+    const updated: ManagedProfile = {
       id,
-      email: "ventanilla.prepa@uas.edu.mx",
-      displayName: changes.displayName || "Administrador Ventanilla",
-      role: changes.role || "admin",
-      active: changes.active ?? true,
-      createdAt: new Date().toISOString(),
+      email: existing?.email ?? "ventanilla.prepa@uas.edu.mx",
+      displayName: changes.displayName?.trim() || existing?.displayName || "Usuario Ventanilla",
+      role: nextRole,
+      division: changes.division ?? existing?.division ?? normalizeAccesoDivision(undefined, nextRole),
+      active: changes.active ?? existing?.active ?? true,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    const nextList = existing
+      ? profiles.map(p => (p.id === id ? updated : p))
+      : [updated, ...profiles];
+    saveLocalProfiles(nextList);
+    return updated;
   }
+
+  assertSupabaseConfigured();
 
   const payload: Record<string, string | boolean> = {};
   if (changes.displayName !== undefined) payload.display_name = changes.displayName.trim();
   if (changes.role !== undefined) payload.role = changes.role;
+  if (changes.division !== undefined) payload.division = changes.division;
   if (changes.active !== undefined) payload.active = changes.active;
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("profiles")
     .update(payload)
     .eq("id", id)
-    .select("id,email,display_name,role,active,created_at,updated_at")
+    .select("id,email,display_name,role,division,active,created_at,updated_at")
     .single<ProfileAdminRow>();
 
-  if (error) throw error;
+  if (error && isMissingColumnError(error)) {
+    if (changes.division !== undefined) {
+      throw new Error(
+        "Falta la columna 'division' en public.profiles. Ejecuta el script SQL 20261029_division_licenciatura_usuarios.sql en Supabase."
+      );
+    }
+    const fallback = await supabase
+      .from("profiles")
+      .update(payload)
+      .eq("id", id)
+      .select("id,email,display_name,role,active,created_at,updated_at")
+      .single<ProfileAdminRow>();
+    data = fallback.data;
+    error = fallback.error;
+  }
+
+  if (error || !data) throw error ?? new Error("No se pudo actualizar el perfil.");
   return mapManagedProfile(data);
 }
 
-export async function fetchCycleSummaries(): Promise<CycleSummary[]> {
-  const alumnos = isMockMode ? loadLocalAlumnos() : await fetchAlumnos(await fetchCatalogos());
+export function buildCycleSummaries(alumnos: Alumno[]): CycleSummary[] {
   const currentCycle = getCicloEscolarAnioFin();
   const summaries = new Map<number, CycleSummary>();
 
@@ -1130,7 +1698,15 @@ export async function fetchCycleSummaries(): Promise<CycleSummary[]> {
   return Array.from(summaries.values()).sort((a, b) => b.cicloAnioFin - a.cicloAnioFin);
 }
 
-export async function deletePreviousCycle(cicloAnioFin: number): Promise<number> {
+export async function fetchCycleSummaries(): Promise<CycleSummary[]> {
+  const alumnos = isMockMode ? loadLocalAlumnos() : await fetchAlumnos(await fetchCatalogos());
+  return buildCycleSummaries(alumnos);
+}
+
+export async function deletePreviousCycle(
+  cicloAnioFin: number,
+  division?: DivisionAcademica
+): Promise<number> {
   const currentCycle = getCicloEscolarAnioFin();
   if (cicloAnioFin >= currentCycle) {
     throw new Error("El ciclo actual está protegido y no se puede borrar desde mantenimiento.");
@@ -1138,32 +1714,55 @@ export async function deletePreviousCycle(cicloAnioFin: number): Promise<number>
 
   if (isMockMode) {
     const list = loadLocalAlumnos();
-    const filtered = list.filter(a => getCicloEscolarAnioFinFromPeriodo(a.mes, a.anio) !== cicloAnioFin);
+    const filtered = list.filter(a => {
+      const sameCycle = getCicloEscolarAnioFinFromPeriodo(a.mes, a.anio) === cicloAnioFin;
+      if (!sameCycle) return true;
+      if (!division) return false;
+      const itemDivision = a.division ?? getDivisionFromClave(a.preparatoriaClave);
+      return itemDivision !== division;
+    });
     const deleted = list.length - filtered.length;
     saveLocalAlumnos(filtered);
     return deleted;
   }
 
+  assertSupabaseConfigured();
+
   const previousYear = cicloAnioFin - 1;
-  const firstHalf = await supabase
-    .from("solicitudes_titulacion")
-    .delete()
-    .eq("periodo_anio", previousYear)
-    .gte("periodo_mes", 8)
-    .lte("periodo_mes", 12)
-    .select("id");
 
-  if (firstHalf.error) throw firstHalf.error;
+  const runHalfDelete = async (anio: number, mesMin: number, mesMax: number) => {
+    let query = supabase
+      .from("solicitudes_titulacion")
+      .delete()
+      .eq("periodo_anio", anio)
+      .gte("periodo_mes", mesMin)
+      .lte("periodo_mes", mesMax);
 
-  const secondHalf = await supabase
-    .from("solicitudes_titulacion")
-    .delete()
-    .eq("periodo_anio", cicloAnioFin)
-    .gte("periodo_mes", 1)
-    .lte("periodo_mes", 7)
-    .select("id");
+    if (division) {
+      query = query.eq("division", division);
+    }
 
-  if (secondHalf.error) throw secondHalf.error;
+    let result = await query.select("id");
+    if (result.error && division && isMissingColumnError(result.error)) {
+      let fallbackQuery = supabase
+        .from("solicitudes_titulacion")
+        .delete()
+        .eq("periodo_anio", anio)
+        .gte("periodo_mes", mesMin)
+        .lte("periodo_mes", mesMax);
+      fallbackQuery =
+        division === "bachillerato"
+          ? fallbackQuery.like("preparatoria_clave", "82%")
+          : fallbackQuery.not("preparatoria_clave", "like", "82%");
+      result = await fallbackQuery.select("id");
+    }
 
-  return (firstHalf.data?.length ?? 0) + (secondHalf.data?.length ?? 0);
+    if (result.error) throw result.error;
+    return result.data?.length ?? 0;
+  };
+
+  const firstCount = await runHalfDelete(previousYear, 8, 12);
+  const secondCount = await runHalfDelete(cicloAnioFin, 1, 7);
+
+  return firstCount + secondCount;
 }
