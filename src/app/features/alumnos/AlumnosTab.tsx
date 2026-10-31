@@ -909,7 +909,11 @@ export function AlumnosTab({
           a.numeroCuenta.toLowerCase().includes(q) ||
           a.preparatoriaNombre.toLowerCase().includes(q) ||
           a.preparatoriaClave.toLowerCase().includes(q) ||
-          a.modalidad.toLowerCase().includes(q)
+          a.modalidad.toLowerCase().includes(q) ||
+          (a.curp && a.curp.toLowerCase().includes(q)) ||
+          (a.folioRecibo && a.folioRecibo.toLowerCase().includes(q)) ||
+          (a.cicloRecibo && a.cicloRecibo.toLowerCase().includes(q)) ||
+          (a.microfilm && a.microfilm.toLowerCase().includes(q))
       );
     }
     return list;
@@ -1142,12 +1146,12 @@ export function AlumnosTab({
       {/* Toolbar: Filters, Bulk Actions, Search, Add */}
       <div className="flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-          <div className="relative w-64">
+          <div className="relative w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={isLicenciatura ? "Buscar por cuenta, nombre, facultad..." : "Buscar por cuenta, nombre o prepa..."}
+              placeholder={isLicenciatura ? "Buscar por cuenta, nombre, CURP, folio, microfilm..." : "Buscar por cuenta, nombre, CURP, folio, microfilm..."}
               className="w-full h-9 bg-card border border-border rounded-lg pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25"
             />
           </div>
@@ -1307,11 +1311,14 @@ export function AlumnosTab({
                 <th className="px-2 py-2.5 w-8 text-center">#</th>
                 <th className="px-3 py-2.5">No. Cuenta</th>
                 <th className="px-3 py-2.5">Nombre del Alumno</th>
-                <th className="px-3 py-2.5">{isLicenciatura ? "Facultad / Unidad" : "Preparatoria"}</th>
+                <th className="px-3 py-2.5">Folio Recibo</th>
+                <th className="px-3 py-2.5">Ciclo Recibo</th>
+                <th className="px-3 py-2.5">{isLicenciatura ? "Clave / Facultad" : "Clave / Preparatoria"}</th>
                 <th className="px-3 py-2.5">{isLicenciatura ? "Carrera" : "Modalidad"}</th>
-                <th className="px-3 py-2.5">Turno</th>
-                <th className="px-3 py-2.5">Tipo</th>
-                <th className="px-3 py-2.5">Generación</th>
+                <th className="px-2 py-2.5 text-center">Plan</th>
+                <th className="px-3 py-2.5">CURP</th>
+                <th className="px-3 py-2.5"># Microfilm</th>
+                <th className="px-2 py-2.5 text-center">Historial / Kárdex</th>
                 <th className="px-3 py-2.5 text-right">Costo</th>
                 <th className="px-3 py-2.5">Estado</th>
                 <th className="px-3 py-2.5 text-center">Acciones</th>
@@ -1320,7 +1327,7 @@ export function AlumnosTab({
             <tbody className="divide-y divide-border/40">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-16 text-center text-muted-foreground text-xs">
+                  <td colSpan={15} className="py-16 text-center text-muted-foreground text-xs">
                     No hay solicitudes para {MESES[selectedMes - 1]} de {selectedMonthYear}
                     {search ? " que coincidan con la búsqueda" : ""}.
                   </td>
@@ -1360,6 +1367,12 @@ export function AlumnosTab({
                       <td className="px-3 py-2 font-semibold text-foreground whitespace-nowrap">
                         {a.nombre}
                       </td>
+                      <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
+                        {a.folioRecibo || "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
+                        {a.cicloRecibo || "—"}
+                      </td>
                       <td className="px-3 py-2 text-foreground whitespace-nowrap">
                         <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-secondary font-bold mr-1.5 text-muted-foreground">
                           {a.preparatoriaClave}
@@ -1369,7 +1382,7 @@ export function AlumnosTab({
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span
                           title={a.modalidad}
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border inline-block max-w-[240px] truncate align-middle ${
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border inline-block max-w-[220px] truncate align-middle ${
                             isLicenciatura
                               ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-600 dark:text-indigo-300"
                               : a.modalidad === "Escolarizada"
@@ -1382,22 +1395,38 @@ export function AlumnosTab({
                           {a.modalidad}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                        {a.turno}
+                      <td className="px-2 py-2 font-mono text-center text-muted-foreground whitespace-nowrap">
+                        {a.planEstudio || "18"}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                            a.tipoCertificado === "Digital"
-                              ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-                              : "bg-secondary text-foreground"
-                          }`}
-                        >
-                          {a.tipoCertificado}
-                        </span>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground uppercase whitespace-nowrap">
+                        {a.curp || "—"}
                       </td>
-                      <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
-                        {a.generacion}
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground uppercase whitespace-nowrap">
+                        {a.microfilm || "—"}
+                      </td>
+                      <td className="px-2 py-2 text-center whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1 font-mono text-[10px]">
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
+                              a.revisoHistorial !== false
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                : "bg-red-500/10 text-red-500 border border-red-500/20"
+                            }`}
+                            title={a.revisoHistorial !== false ? "Historial Académico revisado" : "Historial Académico NO revisado"}
+                          >
+                            H:{a.revisoHistorial !== false ? "SI" : "NO"}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
+                              a.revisoKardex !== false
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                : "bg-red-500/10 text-red-500 border border-red-500/20"
+                            }`}
+                            title={a.revisoKardex !== false ? "Kárdex revisado" : "Kárdex NO revisado"}
+                          >
+                            K:{a.revisoKardex !== false ? "SI" : "NO"}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-3 py-2 font-mono font-bold text-foreground text-right whitespace-nowrap">
                         {fmtCurrency(a.pago ?? COSTO_BASE_CERTIFICADO)}
