@@ -30,7 +30,6 @@ import {
   TURNOS,
   exportFormatoControlSolicitudesXlsx,
   exportToCSV,
-  exportTramiteTituloXlsx,
   fmtCurrency,
   fmtDate,
   getCicloEscolarAnioFin,
@@ -948,7 +947,6 @@ export function AlumnosTab({
   };
 
   const [exportingFormato, setExportingFormato] = useState(false);
-  const [exportingCiclo, setExportingCiclo] = useState(false);
   const [folioCorte, setFolioCorte] = useState(() => loadSavedFolioCorte(division));
 
   useEffect(() => {
@@ -958,60 +956,67 @@ export function AlumnosTab({
     setSelectedIds(new Set());
   }, [division]);
 
-  // Alumnos elegibles para el Formato de Envío (Recibidos o Rechazados)
-  const alumnosElegiblesFormato = useMemo(() => {
-    return cicloAlumnos.filter(
-      a => selectedIds.has(a.id) && (a.estado === "recibido" || a.estado === "rechazado")
-    );
+  const selectedAlumnos = useMemo(() => {
+    return cicloAlumnos.filter(a => selectedIds.has(a.id));
   }, [cicloAlumnos, selectedIds]);
 
-  const handleGenerarFormato = async () => {
-    if (alumnosElegiblesFormato.length === 0 || exportingFormato) return;
+  const alumnosElegiblesCorte = useMemo(() => {
+    return selectedAlumnos.filter(a => a.estado === "recibido" || a.estado === "rechazado");
+  }, [selectedAlumnos]);
+
+  const isOfficialCorte = alumnosElegiblesCorte.length > 0;
+  const targetAlumnosExport = isOfficialCorte
+    ? alumnosElegiblesCorte
+    : selectedIds.size > 0
+    ? selectedAlumnos
+    : filtered;
+
+  const targetCount = targetAlumnosExport.length;
+  const totalHojas = Math.max(1, Math.ceil(targetCount / 20));
+
+  const handleExportarFormatoURS = async () => {
+    if (targetAlumnosExport.length === 0 || exportingFormato) return;
     setExportingFormato(true);
     try {
-      const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
-      const cleanFolio = folioCorte.trim() || "09";
-      await exportFormatoControlSolicitudesXlsx(alumnosElegiblesFormato, cleanFolio, division);
+      const fallbackFolio = division === "licenciatura" ? "01" : "09";
+      const cleanFolio = folioCorte.trim() || fallbackFolio;
+      await exportFormatoControlSolicitudesXlsx(targetAlumnosExport, cleanFolio, division);
 
-      const recibidos = alumnosElegiblesFormato
-        .filter(a => a.estado === "recibido")
-        .map(a => a.id);
-      const rechazados = alumnosElegiblesFormato
-        .filter(a => a.estado === "rechazado")
-        .map(a => a.id);
+      if (isOfficialCorte) {
+        const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
+        const recibidos = alumnosElegiblesCorte
+          .filter(a => a.estado === "recibido")
+          .map(a => a.id);
+        const rechazados = alumnosElegiblesCorte
+          .filter(a => a.estado === "rechazado")
+          .map(a => a.id);
 
-      await Promise.all([
-        recibidos.length > 0
-          ? onBulkUpdate(recibidos, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: false })
-          : Promise.resolve(),
-        rechazados.length > 0
-          ? onBulkUpdate(rechazados, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: true })
-          : Promise.resolve(),
-      ]);
+        await Promise.all([
+          recibidos.length > 0
+            ? onBulkUpdate(recibidos, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: false })
+            : Promise.resolve(),
+          rechazados.length > 0
+            ? onBulkUpdate(rechazados, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: true })
+            : Promise.resolve(),
+        ]);
 
-      setSelectedIds(new Set());
-      const hojas = Math.ceil(alumnosElegiblesFormato.length / 20);
-      onToast?.(
-        `Corte Folio ${cleanFolio} generado (${alumnosElegiblesFormato.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
-        "success"
-      );
+        setSelectedIds(new Set());
+        const hojas = Math.max(1, Math.ceil(alumnosElegiblesCorte.length / 20));
+        onToast?.(
+          `Corte Folio ${cleanFolio} generado (${alumnosElegiblesCorte.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
+          "success"
+        );
+      } else {
+        const hojas = Math.max(1, Math.ceil(targetAlumnosExport.length / 20));
+        onToast?.(
+          `Reporte URS generado (${targetAlumnosExport.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""})`,
+          "success"
+        );
+      }
     } catch (err) {
-      onToast?.(err instanceof Error ? err.message : "Error al generar formato", "error");
+      onToast?.(err instanceof Error ? err.message : "Error al exportar formato URS", "error");
     } finally {
       setExportingFormato(false);
-    }
-  };
-
-  const handleExportCicloExcel = async () => {
-    if (cicloAlumnos.length === 0 || exportingCiclo) return;
-    setExportingCiclo(true);
-    try {
-      await exportTramiteTituloXlsx(cicloAlumnos, selectedCicloAnioFin, division);
-      onToast?.("Concentrado de ciclo exportado correctamente", "success");
-    } catch (err) {
-      onToast?.(err instanceof Error ? err.message : "Error al exportar concentrado", "error");
-    } finally {
-      setExportingCiclo(false);
     }
   };
 
@@ -1204,34 +1209,42 @@ export function AlumnosTab({
         </div>
 
         <div className="flex items-center gap-2">
-          {alumnosElegiblesFormato.length > 0 && (
-            <div className="flex items-center rounded-lg border border-emerald-600/40 bg-emerald-600/10 overflow-hidden shadow-sm">
-              <label className="flex items-center gap-1.5 pl-2.5 pr-2 h-9 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                Folio:
-                <input
-                  type="text"
-                  value={folioCorte}
-                  onChange={e => setFolioCorte(e.target.value.slice(0, 6))}
-                  placeholder="09"
-                  className="w-11 h-6 rounded bg-card border border-emerald-500/40 px-1.5 text-center font-mono text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  title="Número de Folio del Corte (ej. 09)"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={exportingFormato}
-                onClick={handleGenerarFormato}
-                className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
-                title="Descarga el formato de Corte de Certificados URS (20 por hoja) y actualiza automáticamente el estado a Enviado (Culiacán)"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                {exportingFormato ? "Generando..." : `Generar Formato Corte (${alumnosElegiblesFormato.length})`}
-                <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
-                  {Math.ceil(alumnosElegiblesFormato.length / 20)} hoja{Math.ceil(alumnosElegiblesFormato.length / 20) > 1 ? "s" : ""}
-                </span>
-              </button>
-            </div>
-          )}
+          <div className="flex items-center rounded-lg border border-emerald-600/40 bg-emerald-600/10 overflow-hidden shadow-sm">
+            <label className="flex items-center gap-1.5 pl-2.5 pr-2 h-9 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+              Folio:
+              <input
+                type="text"
+                value={folioCorte}
+                onChange={e => setFolioCorte(e.target.value.slice(0, 6))}
+                placeholder={division === "licenciatura" ? "01" : "09"}
+                className="w-11 h-6 rounded bg-card border border-emerald-500/40 px-1.5 text-center font-mono text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                title="Número de Folio del Corte (ej. 09)"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={exportingFormato || targetCount === 0}
+              onClick={handleExportarFormatoURS}
+              className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
+              title={
+                isOfficialCorte
+                  ? "Descarga el formato de Corte de Certificados URS (20 por hoja) y actualiza automáticamente el estado a Enviado (Culiacán)"
+                  : "Exporta los registros actuales en el formato oficial URS (20 por hoja) sin modificar estados"
+              }
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              {exportingFormato
+                ? "Generando..."
+                : isOfficialCorte
+                ? `Generar Corte (${targetCount})`
+                : selectedIds.size > 0
+                ? `Exportar URS (${targetCount})`
+                : "Exportar URS"}
+              <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
+                {totalHojas} hoja{totalHojas > 1 ? "s" : ""}
+              </span>
+            </button>
+          </div>
 
           {selectedIds.size > 0 && (
             <>
@@ -1253,17 +1266,6 @@ export function AlumnosTab({
               </button>
             </>
           )}
-
-          <button
-            type="button"
-            disabled={exportingCiclo || cicloAlumnos.length === 0}
-            onClick={handleExportCicloExcel}
-            className="h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-40"
-            title="Exportar concentrado del ciclo escolar a Excel (.xlsx)"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            {exportingCiclo ? "Generando..." : "Excel Ciclo"}
-          </button>
 
           <button
             type="button"
