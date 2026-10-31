@@ -78,6 +78,31 @@ VITE_SUPABASE_PUBLISHABLE_KEY=tu_publishable_anon_key
 
 ---
 
+## Migraciones y Actualizaciones Recientes (Sector Sur)
+
+Las siguientes migraciones agregan los campos requeridos para el corte oficial de certificados URS y la separación de división académica:
+
+1. `20261027_campos_corte_certificados.sql`:
+   - Agrega campos en `public.solicitudes_titulacion`: `curp`, `folio_recibo`, `ciclo_recibo`, `carrera_codigo`, `plan_estudio`, `microfilm`, `reviso_historial`, `reviso_kardex`.
+2. `20261029_division_licenciatura_usuarios.sql`:
+   - Agrega columna `division` en `public.profiles` (`bachillerato`, `licenciatura`, `ambas`).
+   - Agrega columna `division` en `public.preparatorias` y precarga las 18 facultades/escuelas del Sector Sur con sus 42 carreras.
+   - Agrega columna `division` e índice en `public.solicitudes_titulacion`.
+
+### Ejecución de Migraciones mediante Supabase CLI
+
+Estando autenticado y vinculado con el proyecto en la nube:
+
+```powershell
+# Aplicar campos de corte URS
+npx supabase db query --linked --file supabase/sql/20261027_campos_corte_certificados.sql
+
+# Aplicar división académica y facultades
+npx supabase db query --linked --file supabase/sql/20261029_division_licenciatura_usuarios.sql
+```
+
+---
+
 ## Estado de Archivos Anteriores y Obsoletos
 
 Los siguientes archivos pertenecen a la versión previa del sistema (Titulación Universitaria) y **NO deben ejecutarse** en proyectos para el sistema de preparatorias:
