@@ -30,7 +30,6 @@ import {
   TURNOS,
   exportFormatoControlSolicitudesXlsx,
   exportToCSV,
-  exportTramiteTituloXlsx,
   fmtCurrency,
   fmtDate,
   getCicloEscolarAnioFin,
@@ -341,6 +340,10 @@ function EditModal({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [showDetails, setShowDetails] = useState(() => {
+    if (!alumno) return false;
+    return Boolean(alumno.telefono || alumno.email || alumno.cartaPoder || alumno.recibio);
+  });
 
   const isAdd = alumno === null;
 
@@ -409,8 +412,7 @@ function EditModal({
       return;
     }
     if (!form.generacion.trim()) {
-      setError("Completa la Generación (ej. 2021-2024).");
-      return;
+      form.generacion = `${anio - 3}-${anio}`;
     }
     if (form.pago === undefined || isNaN(form.pago) || form.pago < 0) {
       setError("Indica un costo válido para el trámite.");
@@ -477,13 +479,14 @@ function EditModal({
 
         {/* Form Body */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
-          {/* Section 1: Alumno */}
+          {/* Bloque 1: Solicitante y Recibo de Pago */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-2">
-              Datos del Solicitante
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-500 mb-2 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              1. Solicitante y Recibo de Pago
             </p>
-            <div className="grid grid-cols-4 gap-4">
-              <div>
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-3">
                 <label className={labelCls}>
                   No. Cuenta (sin guion){requiredMark}
                 </label>
@@ -496,8 +499,8 @@ function EditModal({
                   maxLength={8}
                 />
               </div>
-              <div className="col-span-2">
-                <label className={labelCls}>Nombre del Solicitante{requiredMark}</label>
+              <div className="col-span-5">
+                <label className={labelCls}>Nombre Completo del Solicitante{requiredMark}</label>
                 <input
                   className={fieldCls}
                   value={form.nombre}
@@ -505,7 +508,7 @@ function EditModal({
                   placeholder="APELLIDO PATERNO MATERNO NOMBRE(S)"
                 />
               </div>
-              <div>
+              <div className="col-span-4">
                 <label className={labelCls}>CURP (18 caracteres)</label>
                 <input
                   className={`${fieldCls} font-mono uppercase tracking-wider`}
@@ -515,16 +518,45 @@ function EditModal({
                   maxLength={18}
                 />
               </div>
+              <div className="col-span-6">
+                <label className={labelCls}>Folio del Recibo de Pago</label>
+                <input
+                  className={`${fieldCls} font-mono`}
+                  value={form.folioRecibo || ""}
+                  onChange={e => set("folioRecibo", e.target.value.replace(/\D/g, "").slice(0, 12))}
+                  placeholder="14495580"
+                  inputMode="numeric"
+                />
+              </div>
+              <div className="col-span-6">
+                <label className={labelCls}>Ciclo del Recibo</label>
+                <input
+                  className={`${fieldCls} font-mono`}
+                  value={form.cicloRecibo || ""}
+                  onChange={e => set("cicloRecibo", e.target.value)}
+                  placeholder="2025-2026"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Section 2: Unidad Académica, Modalidad/Carrera y Plan */}
+          {/* Bloque 2: Adscripción y Plan de Estudios */}
           <div className="border-t border-border/50 pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-2">
-              Adscripción y Plan de Estudios
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-500 mb-2 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              2. Adscripción y Plan de Estudios
             </p>
-            <div className="grid grid-cols-12 gap-4">
-              <div className="col-span-4">
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-3">
+                <label className={labelCls}>Clave UA (Sincronizada)</label>
+                <input
+                  readOnly
+                  className={`${fieldCls} font-mono font-bold bg-secondary/40 text-muted-foreground text-center cursor-not-allowed`}
+                  value={form.preparatoriaClave}
+                  title="Clave oficial de la Unidad Académica"
+                />
+              </div>
+              <div className="col-span-5">
                 <label className={labelCls}>
                   {isLicenciatura ? "Facultad / Unidad Académica" : "Unidad Académica (Preparatoria)"}
                   {requiredMark}
@@ -551,8 +583,8 @@ function EditModal({
                   searchPlaceholder="Buscar carrera..."
                 />
               </div>
-              <div className="col-span-2">
-                <label className={labelCls}>{isLicenciatura ? "Cód. Carrera" : "Carrera (Cód.)"}</label>
+              <div className="col-span-3">
+                <label className={labelCls}>{isLicenciatura ? "Cód. Carrera" : "Carrera (Cód. 1/2/3)"}</label>
                 <input
                   className={`${fieldCls} font-mono text-center font-bold`}
                   value={form.carreraCodigo ?? getDefaultCarreraCodigo(form.modalidad, division)}
@@ -561,8 +593,8 @@ function EditModal({
                   inputMode="numeric"
                 />
               </div>
-              <div className="col-span-2">
-                <label className={labelCls}>Plan Estudio</label>
+              <div className="col-span-3">
+                <label className={labelCls}>Plan de Estudio</label>
                 <input
                   className={`${fieldCls} font-mono text-center font-bold`}
                   value={form.planEstudio ?? "18"}
@@ -571,82 +603,63 @@ function EditModal({
                   inputMode="numeric"
                 />
               </div>
-            </div>
-          </div>
-
-          {/* Section 3: Datos del Trámite y Corte de Certificados */}
-          <div className="border-t border-border/50 pt-3 space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500">
-              Detalles del Certificado y Formato de Corte
-            </p>
-            <div className="grid grid-cols-4 gap-4">
-              <div>
-                <label className={labelCls}>Folio del Recibo</label>
+              <div className="col-span-6">
+                <label className={labelCls}># de Microfilm (Kárdex / Archivo)</label>
                 <input
-                  className={`${fieldCls} font-mono`}
-                  value={form.folioRecibo || ""}
-                  onChange={e => set("folioRecibo", e.target.value.replace(/\D/g, "").slice(0, 12))}
-                  placeholder="14495580"
-                  inputMode="numeric"
-                />
-              </div>
-
-              <div>
-                <label className={labelCls}>Ciclo del Recibo</label>
-                <input
-                  className={`${fieldCls} font-mono`}
-                  value={form.cicloRecibo || ""}
-                  onChange={e => set("cicloRecibo", e.target.value)}
-                  placeholder="2025-2026"
-                />
-              </div>
-
-              <div>
-                <label className={labelCls}># de Microfilm</label>
-                <input
-                  className={`${fieldCls} font-mono uppercase`}
+                  className={`${fieldCls} font-mono uppercase font-semibold`}
                   value={form.microfilm || ""}
                   onChange={e => set("microfilm", e.target.value.toUpperCase())}
                   placeholder="826020230373"
                 />
               </div>
+            </div>
+          </div>
 
-              <div>
-                <label className={labelCls}>Generación{requiredMark}</label>
-                <input
-                  className={fieldCls}
-                  value={form.generacion}
-                  onChange={e => set("generacion", formatGeneration(e.target.value))}
-                  placeholder="2021-2024"
-                  inputMode="numeric"
-                  maxLength={9}
+          {/* Bloque 3: Cotejo Académico y Estado del Trámite */}
+          <div className="border-t border-border/50 pt-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-500 mb-2 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              3. Cotejo Académico y Estado del Trámite
+            </p>
+
+            {/* Notas preventivas de cotejo */}
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer select-none">
+                <Checkbox
+                  checked={form.revisoHistorial !== false}
+                  onChange={checked => set("revisoHistorial", checked)}
+                  className="mt-0.5"
                 />
-              </div>
+                <div>
+                  <p className="text-xs font-bold text-foreground">
+                    Revisó Historial Académico ({form.revisoHistorial !== false ? "SI" : "NO"})
+                  </p>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                    * Evitar doble calificación
+                  </p>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer select-none">
+                <Checkbox
+                  checked={form.revisoKardex !== false}
+                  onChange={checked => set("revisoKardex", checked)}
+                  className="mt-0.5"
+                />
+                <div>
+                  <p className="text-xs font-bold text-foreground">
+                    Revisó Kárdex ({form.revisoKardex !== false ? "SI" : "NO"})
+                  </p>
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                    * Evitar materias pendientes
+                  </p>
+                </div>
+              </label>
             </div>
 
-            <div className="grid grid-cols-4 gap-4">
-              <div>
-                <label className={labelCls}>Tipo de Certificado{requiredMark}</label>
-                <CustomSelect
-                  value={form.tipoCertificado}
-                  onChange={v => set("tipoCertificado", v as TipoCertificado)}
-                  options={TIPOS_CERTIFICADO.map(t => ({ value: t, label: t }))}
-                />
-              </div>
-
-              <div>
-                <label className={labelCls}>Turno{requiredMark}</label>
-                <CustomSelect
-                  value={form.turno}
-                  onChange={v => set("turno", v as Turno)}
-                  options={TURNOS.map(t => ({ value: t, label: t }))}
-                />
-              </div>
-
-              <div>
-                <label className={labelCls}>
-                  Costo ($ MXN){requiredMark}
-                </label>
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-4">
+                <label className={labelCls}>Costo ($ MXN){requiredMark}</label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground">
                     $
@@ -661,122 +674,7 @@ function EditModal({
                   />
                 </div>
               </div>
-
-              <div className="flex flex-col justify-end gap-1.5 pb-0.5">
-                <label className="flex items-center gap-2 text-xs font-medium text-foreground cursor-pointer select-none">
-                  <Checkbox
-                    checked={form.revisoHistorial !== false}
-                    onChange={checked => set("revisoHistorial", checked)}
-                  />
-                  <span>Revisó Historial ({form.revisoHistorial !== false ? "SI" : "NO"})</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs font-medium text-foreground cursor-pointer select-none">
-                  <Checkbox
-                    checked={form.revisoKardex !== false}
-                    onChange={checked => set("revisoKardex", checked)}
-                  />
-                  <span>Revisó Kárdex ({form.revisoKardex !== false ? "SI" : "NO"})</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 4: Contacto (Opcional) */}
-          <div className="border-t border-border/50 pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-              Contacto con el Alumno (Opcional)
-            </p>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className={labelCls}>Teléfono Personal</label>
-                <input
-                  className={fieldCls}
-                  value={form.telefono || ""}
-                  onChange={e => set("telefono", e.target.value)}
-                  placeholder="10 dígitos"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>Teléfono Alternativo</label>
-                <input
-                  className={fieldCls}
-                  value={form.telefonoAlt || ""}
-                  onChange={e => set("telefonoAlt", e.target.value)}
-                  placeholder="10 dígitos"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>Correo Electrónico</label>
-                <input
-                  className={fieldCls}
-                  type="email"
-                  value={form.email || ""}
-                  onChange={e => set("email", e.target.value)}
-                  placeholder="correo@ejemplo.com"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 5: Fechas y Seguimiento */}
-          <div className="border-t border-border/50 pt-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-              Fechas y Seguimiento Físico
-            </p>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <DateField
-                  label="Documentos Recibidos"
-                  value={form.recibio}
-                  onChange={v => set("recibio", v)}
-                />
-              </div>
-              <div>
-                <DateField
-                  label="Recepción en Archivo"
-                  value={form.recibido}
-                  onChange={v => set("recibido", v)}
-                />
-              </div>
-              <div>
-                <DateField
-                  label="Envío a Certificación"
-                  value={form.envio}
-                  onChange={v => set("envio", v)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4 mt-3">
-              <div>
-                <label className={labelCls}>Folio Carta Poder (Opcional)</label>
-                <input
-                  className={fieldCls}
-                  value={form.cartaPoder}
-                  onChange={e => set("cartaPoder", e.target.value)}
-                  placeholder="Ej. CP-102 (solo si viene apoderado)"
-                />
-                <p className="text-[10px] text-muted-foreground/70 mt-1">
-                  Dejar vacío si el alumno acude en persona.
-                </p>
-              </div>
-              <div>
-                <label className={labelCls}>Localización Física</label>
-                <CustomSelect
-                  value={form.localizacion}
-                  onChange={v => set("localizacion", v)}
-                  options={[
-                    { value: "", label: "Sin ubicación" },
-                    { value: "Mazatlán", label: "Mazatlán" },
-                    { value: "Concordia", label: "Concordia" },
-                    { value: "El Rosario", label: "El Rosario" },
-                    { value: "Escuinapa", label: "Escuinapa" },
-                    { value: "Culiacán", label: "Culiacán" },
-                  ]}
-                  placeholder="Seleccionar..."
-                />
-              </div>
-              <div>
+              <div className="col-span-8">
                 <label className={labelCls}>Estado del Trámite</label>
                 <CustomSelect
                   value={form.estado}
@@ -790,18 +688,151 @@ function EditModal({
                   ]}
                 />
               </div>
+              <div className="col-span-12">
+                <label className={labelCls}>Observaciones de Ventanilla</label>
+                <textarea
+                  className={`${fieldCls} resize-none`}
+                  rows={2}
+                  value={form.observaciones}
+                  onChange={e => set("observaciones", e.target.value)}
+                  placeholder="Observaciones de cotejo, documentos pendientes o incidencias..."
+                />
+              </div>
             </div>
+          </div>
 
-            <div className="mt-3">
-              <label className={labelCls}>Observaciones de Ventanilla</label>
-              <textarea
-                className={`${fieldCls} resize-none`}
-                rows={2}
-                value={form.observaciones}
-                onChange={e => set("observaciones", e.target.value)}
-                placeholder="Observaciones de documentos, cotejo o validación..."
-              />
-            </div>
+          {/* Bloque Secundario / Colapsable: Datos Adicionales de Archivo y Contacto */}
+          <div className="border-t border-border/50 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowDetails(prev => !prev)}
+              className="flex items-center justify-between w-full text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors py-1"
+            >
+              <span className="flex items-center gap-1.5">
+                {showDetails ? <ChevronDown className="w-3.5 h-3.5 text-amber-500" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                Datos Adicionales de Archivo y Contacto (Opcional)
+              </span>
+              <span className="text-[10px] lowercase text-muted-foreground/60 font-normal">
+                {showDetails ? "ocultar" : "mostrar campos secundarios"}
+              </span>
+            </button>
+
+            {showDetails && (
+              <div className="space-y-3 pt-2">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className={labelCls}>Generación</label>
+                    <input
+                      className={fieldCls}
+                      value={form.generacion}
+                      onChange={e => set("generacion", formatGeneration(e.target.value))}
+                      placeholder="2021-2024"
+                      inputMode="numeric"
+                      maxLength={9}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Tipo de Certificado</label>
+                    <CustomSelect
+                      value={form.tipoCertificado}
+                      onChange={v => set("tipoCertificado", v as TipoCertificado)}
+                      options={TIPOS_CERTIFICADO.map(t => ({ value: t, label: t }))}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Turno</label>
+                    <CustomSelect
+                      value={form.turno}
+                      onChange={v => set("turno", v as Turno)}
+                      options={TURNOS.map(t => ({ value: t, label: t }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className={labelCls}>Teléfono Personal</label>
+                    <input
+                      className={fieldCls}
+                      value={form.telefono || ""}
+                      onChange={e => set("telefono", e.target.value)}
+                      placeholder="10 dígitos"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Teléfono Alternativo</label>
+                    <input
+                      className={fieldCls}
+                      value={form.telefonoAlt || ""}
+                      onChange={e => set("telefonoAlt", e.target.value)}
+                      placeholder="10 dígitos"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Correo Electrónico</label>
+                    <input
+                      className={fieldCls}
+                      type="email"
+                      value={form.email || ""}
+                      onChange={e => set("email", e.target.value)}
+                      placeholder="correo@ejemplo.com"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <DateField
+                      label="Documentos Recibidos"
+                      value={form.recibio}
+                      onChange={v => set("recibio", v)}
+                    />
+                  </div>
+                  <div>
+                    <DateField
+                      label="Recepción en Archivo"
+                      value={form.recibido}
+                      onChange={v => set("recibido", v)}
+                    />
+                  </div>
+                  <div>
+                    <DateField
+                      label="Envío a Certificación"
+                      value={form.envio}
+                      onChange={v => set("envio", v)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Folio Carta Poder</label>
+                    <input
+                      className={fieldCls}
+                      value={form.cartaPoder}
+                      onChange={e => set("cartaPoder", e.target.value)}
+                      placeholder="Ej. CP-102 (solo si viene apoderado)"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Localización Física</label>
+                    <CustomSelect
+                      value={form.localizacion}
+                      onChange={v => set("localizacion", v)}
+                      options={[
+                        { value: "", label: "Sin ubicación" },
+                        { value: "Mazatlán", label: "Mazatlán" },
+                        { value: "Concordia", label: "Concordia" },
+                        { value: "El Rosario", label: "El Rosario" },
+                        { value: "Escuinapa", label: "Escuinapa" },
+                        { value: "Culiacán", label: "Culiacán" },
+                      ]}
+                      placeholder="Seleccionar..."
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -910,7 +941,11 @@ export function AlumnosTab({
           a.numeroCuenta.toLowerCase().includes(q) ||
           a.preparatoriaNombre.toLowerCase().includes(q) ||
           a.preparatoriaClave.toLowerCase().includes(q) ||
-          a.modalidad.toLowerCase().includes(q)
+          a.modalidad.toLowerCase().includes(q) ||
+          (a.curp && a.curp.toLowerCase().includes(q)) ||
+          (a.folioRecibo && a.folioRecibo.toLowerCase().includes(q)) ||
+          (a.cicloRecibo && a.cicloRecibo.toLowerCase().includes(q)) ||
+          (a.microfilm && a.microfilm.toLowerCase().includes(q))
       );
     }
     return list;
@@ -948,7 +983,6 @@ export function AlumnosTab({
   };
 
   const [exportingFormato, setExportingFormato] = useState(false);
-  const [exportingCiclo, setExportingCiclo] = useState(false);
   const [folioCorte, setFolioCorte] = useState(() => loadSavedFolioCorte(division));
 
   useEffect(() => {
@@ -958,60 +992,67 @@ export function AlumnosTab({
     setSelectedIds(new Set());
   }, [division]);
 
-  // Alumnos elegibles para el Formato de Envío (Recibidos o Rechazados)
-  const alumnosElegiblesFormato = useMemo(() => {
-    return cicloAlumnos.filter(
-      a => selectedIds.has(a.id) && (a.estado === "recibido" || a.estado === "rechazado")
-    );
+  const selectedAlumnos = useMemo(() => {
+    return cicloAlumnos.filter(a => selectedIds.has(a.id));
   }, [cicloAlumnos, selectedIds]);
 
-  const handleGenerarFormato = async () => {
-    if (alumnosElegiblesFormato.length === 0 || exportingFormato) return;
+  const alumnosElegiblesCorte = useMemo(() => {
+    return selectedAlumnos.filter(a => a.estado === "recibido" || a.estado === "rechazado");
+  }, [selectedAlumnos]);
+
+  const isOfficialCorte = alumnosElegiblesCorte.length > 0;
+  const targetAlumnosExport = isOfficialCorte
+    ? alumnosElegiblesCorte
+    : selectedIds.size > 0
+    ? selectedAlumnos
+    : filtered;
+
+  const targetCount = targetAlumnosExport.length;
+  const totalHojas = Math.max(1, Math.ceil(targetCount / 20));
+
+  const handleExportarFormatoURS = async () => {
+    if (targetAlumnosExport.length === 0 || exportingFormato) return;
     setExportingFormato(true);
     try {
-      const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
-      const cleanFolio = folioCorte.trim() || "09";
-      await exportFormatoControlSolicitudesXlsx(alumnosElegiblesFormato, cleanFolio, division);
+      const fallbackFolio = division === "licenciatura" ? "01" : "09";
+      const cleanFolio = folioCorte.trim() || fallbackFolio;
+      await exportFormatoControlSolicitudesXlsx(targetAlumnosExport, cleanFolio, division);
 
-      const recibidos = alumnosElegiblesFormato
-        .filter(a => a.estado === "recibido")
-        .map(a => a.id);
-      const rechazados = alumnosElegiblesFormato
-        .filter(a => a.estado === "rechazado")
-        .map(a => a.id);
+      if (isOfficialCorte) {
+        const todayStr = fmtDate(today.getDate(), today.getMonth() + 1, today.getFullYear());
+        const recibidos = alumnosElegiblesCorte
+          .filter(a => a.estado === "recibido")
+          .map(a => a.id);
+        const rechazados = alumnosElegiblesCorte
+          .filter(a => a.estado === "rechazado")
+          .map(a => a.id);
 
-      await Promise.all([
-        recibidos.length > 0
-          ? onBulkUpdate(recibidos, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: false })
-          : Promise.resolve(),
-        rechazados.length > 0
-          ? onBulkUpdate(rechazados, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: true })
-          : Promise.resolve(),
-      ]);
+        await Promise.all([
+          recibidos.length > 0
+            ? onBulkUpdate(recibidos, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: false })
+            : Promise.resolve(),
+          rechazados.length > 0
+            ? onBulkUpdate(rechazados, { estado: "enviado", envio: todayStr, localizacion: "Culiacán", reenvio: true })
+            : Promise.resolve(),
+        ]);
 
-      setSelectedIds(new Set());
-      const hojas = Math.ceil(alumnosElegiblesFormato.length / 20);
-      onToast?.(
-        `Corte Folio ${cleanFolio} generado (${alumnosElegiblesFormato.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
-        "success"
-      );
+        setSelectedIds(new Set());
+        const hojas = Math.max(1, Math.ceil(alumnosElegiblesCorte.length / 20));
+        onToast?.(
+          `Corte Folio ${cleanFolio} generado (${alumnosElegiblesCorte.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
+          "success"
+        );
+      } else {
+        const hojas = Math.max(1, Math.ceil(targetAlumnosExport.length / 20));
+        onToast?.(
+          `Reporte URS generado (${targetAlumnosExport.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""})`,
+          "success"
+        );
+      }
     } catch (err) {
-      onToast?.(err instanceof Error ? err.message : "Error al generar formato", "error");
+      onToast?.(err instanceof Error ? err.message : "Error al exportar formato URS", "error");
     } finally {
       setExportingFormato(false);
-    }
-  };
-
-  const handleExportCicloExcel = async () => {
-    if (cicloAlumnos.length === 0 || exportingCiclo) return;
-    setExportingCiclo(true);
-    try {
-      await exportTramiteTituloXlsx(cicloAlumnos, selectedCicloAnioFin, division);
-      onToast?.("Concentrado de ciclo exportado correctamente", "success");
-    } catch (err) {
-      onToast?.(err instanceof Error ? err.message : "Error al exportar concentrado", "error");
-    } finally {
-      setExportingCiclo(false);
     }
   };
 
@@ -1137,12 +1178,12 @@ export function AlumnosTab({
       {/* Toolbar: Filters, Bulk Actions, Search, Add */}
       <div className="flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-          <div className="relative w-64">
+          <div className="relative w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder={isLicenciatura ? "Buscar por cuenta, nombre, facultad..." : "Buscar por cuenta, nombre o prepa..."}
+              placeholder={isLicenciatura ? "Buscar por cuenta, nombre, CURP, folio, microfilm..." : "Buscar por cuenta, nombre, CURP, folio, microfilm..."}
               className="w-full h-9 bg-card border border-border rounded-lg pl-9 pr-3 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-amber-400/25"
             />
           </div>
@@ -1204,34 +1245,42 @@ export function AlumnosTab({
         </div>
 
         <div className="flex items-center gap-2">
-          {alumnosElegiblesFormato.length > 0 && (
-            <div className="flex items-center rounded-lg border border-emerald-600/40 bg-emerald-600/10 overflow-hidden shadow-sm">
-              <label className="flex items-center gap-1.5 pl-2.5 pr-2 h-9 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                Folio:
-                <input
-                  type="text"
-                  value={folioCorte}
-                  onChange={e => setFolioCorte(e.target.value.slice(0, 6))}
-                  placeholder="09"
-                  className="w-11 h-6 rounded bg-card border border-emerald-500/40 px-1.5 text-center font-mono text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  title="Número de Folio del Corte (ej. 09)"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={exportingFormato}
-                onClick={handleGenerarFormato}
-                className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
-                title="Descarga el formato de Corte de Certificados URS (20 por hoja) y actualiza automáticamente el estado a Enviado (Culiacán)"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                {exportingFormato ? "Generando..." : `Generar Formato Corte (${alumnosElegiblesFormato.length})`}
-                <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
-                  {Math.ceil(alumnosElegiblesFormato.length / 20)} hoja{Math.ceil(alumnosElegiblesFormato.length / 20) > 1 ? "s" : ""}
-                </span>
-              </button>
-            </div>
-          )}
+          <div className="flex items-center rounded-lg border border-emerald-600/40 bg-emerald-600/10 overflow-hidden shadow-sm">
+            <label className="flex items-center gap-1.5 pl-2.5 pr-2 h-9 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+              Folio:
+              <input
+                type="text"
+                value={folioCorte}
+                onChange={e => setFolioCorte(e.target.value.slice(0, 6))}
+                placeholder={division === "licenciatura" ? "01" : "09"}
+                className="w-11 h-6 rounded bg-card border border-emerald-500/40 px-1.5 text-center font-mono text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                title="Número de Folio del Corte (ej. 09)"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={exportingFormato || targetCount === 0}
+              onClick={handleExportarFormatoURS}
+              className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
+              title={
+                isOfficialCorte
+                  ? "Descarga el formato de Corte de Certificados URS (20 por hoja) y actualiza automáticamente el estado a Enviado (Culiacán)"
+                  : "Exporta los registros actuales en el formato oficial URS (20 por hoja) sin modificar estados"
+              }
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              {exportingFormato
+                ? "Generando..."
+                : isOfficialCorte
+                ? `Generar Corte (${targetCount})`
+                : selectedIds.size > 0
+                ? `Exportar URS (${targetCount})`
+                : "Exportar URS"}
+              <span className="bg-white/20 rounded-full px-1.5 py-0.5 text-[10px]">
+                {totalHojas} hoja{totalHojas > 1 ? "s" : ""}
+              </span>
+            </button>
+          </div>
 
           {selectedIds.size > 0 && (
             <>
@@ -1253,17 +1302,6 @@ export function AlumnosTab({
               </button>
             </>
           )}
-
-          <button
-            type="button"
-            disabled={exportingCiclo || cicloAlumnos.length === 0}
-            onClick={handleExportCicloExcel}
-            className="h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-40"
-            title="Exportar concentrado del ciclo escolar a Excel (.xlsx)"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            {exportingCiclo ? "Generando..." : "Excel Ciclo"}
-          </button>
 
           <button
             type="button"
@@ -1305,11 +1343,14 @@ export function AlumnosTab({
                 <th className="px-2 py-2.5 w-8 text-center">#</th>
                 <th className="px-3 py-2.5">No. Cuenta</th>
                 <th className="px-3 py-2.5">Nombre del Alumno</th>
-                <th className="px-3 py-2.5">{isLicenciatura ? "Facultad / Unidad" : "Preparatoria"}</th>
+                <th className="px-3 py-2.5">Folio Recibo</th>
+                <th className="px-3 py-2.5">Ciclo Recibo</th>
+                <th className="px-3 py-2.5">{isLicenciatura ? "Clave / Facultad" : "Clave / Preparatoria"}</th>
                 <th className="px-3 py-2.5">{isLicenciatura ? "Carrera" : "Modalidad"}</th>
-                <th className="px-3 py-2.5">Turno</th>
-                <th className="px-3 py-2.5">Tipo</th>
-                <th className="px-3 py-2.5">Generación</th>
+                <th className="px-2 py-2.5 text-center">Plan</th>
+                <th className="px-3 py-2.5">CURP</th>
+                <th className="px-3 py-2.5"># Microfilm</th>
+                <th className="px-2 py-2.5 text-center">Historial / Kárdex</th>
                 <th className="px-3 py-2.5 text-right">Costo</th>
                 <th className="px-3 py-2.5">Estado</th>
                 <th className="px-3 py-2.5 text-center">Acciones</th>
@@ -1318,7 +1359,7 @@ export function AlumnosTab({
             <tbody className="divide-y divide-border/40">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-16 text-center text-muted-foreground text-xs">
+                  <td colSpan={15} className="py-16 text-center text-muted-foreground text-xs">
                     No hay solicitudes para {MESES[selectedMes - 1]} de {selectedMonthYear}
                     {search ? " que coincidan con la búsqueda" : ""}.
                   </td>
@@ -1358,6 +1399,12 @@ export function AlumnosTab({
                       <td className="px-3 py-2 font-semibold text-foreground whitespace-nowrap">
                         {a.nombre}
                       </td>
+                      <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
+                        {a.folioRecibo || "—"}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
+                        {a.cicloRecibo || "—"}
+                      </td>
                       <td className="px-3 py-2 text-foreground whitespace-nowrap">
                         <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-secondary font-bold mr-1.5 text-muted-foreground">
                           {a.preparatoriaClave}
@@ -1367,7 +1414,7 @@ export function AlumnosTab({
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span
                           title={a.modalidad}
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border inline-block max-w-[240px] truncate align-middle ${
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border inline-block max-w-[220px] truncate align-middle ${
                             isLicenciatura
                               ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-600 dark:text-indigo-300"
                               : a.modalidad === "Escolarizada"
@@ -1380,22 +1427,38 @@ export function AlumnosTab({
                           {a.modalidad}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                        {a.turno}
+                      <td className="px-2 py-2 font-mono text-center text-muted-foreground whitespace-nowrap">
+                        {a.planEstudio || "18"}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                            a.tipoCertificado === "Digital"
-                              ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-                              : "bg-secondary text-foreground"
-                          }`}
-                        >
-                          {a.tipoCertificado}
-                        </span>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground uppercase whitespace-nowrap">
+                        {a.curp || "—"}
                       </td>
-                      <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
-                        {a.generacion}
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground uppercase whitespace-nowrap">
+                        {a.microfilm || "—"}
+                      </td>
+                      <td className="px-2 py-2 text-center whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1 font-mono text-[10px]">
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
+                              a.revisoHistorial !== false
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                : "bg-red-500/10 text-red-500 border border-red-500/20"
+                            }`}
+                            title={a.revisoHistorial !== false ? "Historial Académico revisado" : "Historial Académico NO revisado"}
+                          >
+                            H:{a.revisoHistorial !== false ? "SI" : "NO"}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-bold ${
+                              a.revisoKardex !== false
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                : "bg-red-500/10 text-red-500 border border-red-500/20"
+                            }`}
+                            title={a.revisoKardex !== false ? "Kárdex revisado" : "Kárdex NO revisado"}
+                          >
+                            K:{a.revisoKardex !== false ? "SI" : "NO"}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-3 py-2 font-mono font-bold text-foreground text-right whitespace-nowrap">
                         {fmtCurrency(a.pago ?? COSTO_BASE_CERTIFICADO)}

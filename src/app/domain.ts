@@ -1,7 +1,6 @@
 import type * as ExcelJSTypes from "exceljs";
 import { saveCsvFile } from "../platform/saveCsv";
 import { saveXlsxFile } from "../platform/saveXlsx";
-import tramiteTituloTemplateUrl from "../../FORMATO TRAMITE TITULO.xlsx?url";
 import formatoControlSolicitudesTemplateUrl from "../../FormatoControlSolicitudes.xlsx?url";
 import reporteProductividadTemplateUrl from "../../FORMATO REPORTE DE PRODUCTIVIDAD DE TITULO PROFESIONAL.xlsx?url";
 
@@ -509,175 +508,12 @@ export async function exportToCSV(
   await saveCsvFile(`certificados_${division}_${MESES[mes - 1]}_${anio}.csv`, csv);
 }
 
-type ExcelCellStyle = Partial<ExcelJSTypes.Style>;
-
-type ExcelRowTemplate = {
-  height?: number;
-  styles: ExcelCellStyle[];
-};
-
-const FORMATO_FIRST_DATA_ROW = 3;
-const FORMATO_LAST_COLUMN = 18;
 const CONTROL_SOLICITUDES_FIRST_DATA_ROW = 7;
 const CONTROL_SOLICITUDES_ROWS_PER_PAGE = 20;
-const ESTADO_STYLE_ROWS: Partial<Record<EstadoTramite, number>> = {
-  enviado: 3,
-  aceptado: 4,
-  pendiente: 5,
-  recibido: 6,
-  rechazado: 7,
-};
-
-const ESTADO_FILLS: Record<EstadoTramite, ExcelJSTypes.Fill> = {
-  pendiente: { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } },
-  recibido: { type: "pattern", pattern: "solid", fgColor: { argb: "FFDDD6FE" } },
-  enviado: { type: "pattern", pattern: "solid", fgColor: { argb: "FFBAE6FD" } },
-  aceptado: { type: "pattern", pattern: "solid", fgColor: { argb: "FFBBF7D0" } },
-  rechazado: { type: "pattern", pattern: "solid", fgColor: { argb: "FFFED7AA" } },
-};
 
 function cloneExcelValue<T>(value: T): T {
   if (value === undefined || value === null) return value;
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function captureRowTemplate(sheet: ExcelJSTypes.Worksheet, rowNumber: number): ExcelRowTemplate {
-  const row = sheet.getRow(rowNumber);
-  return {
-    height: row.height,
-    styles: Array.from({ length: FORMATO_LAST_COLUMN }, (_, index) =>
-      cloneExcelValue(sheet.getCell(rowNumber, index + 1).style)
-    ),
-  };
-}
-
-function applyRowTemplate(row: ExcelJSTypes.Row, template: ExcelRowTemplate) {
-  row.height = template.height;
-  for (let col = 1; col <= FORMATO_LAST_COLUMN; col++) {
-    row.getCell(col).style = cloneExcelValue(template.styles[col - 1] ?? {});
-  }
-}
-
-function sameFill(a?: ExcelJSTypes.Fill, b?: ExcelJSTypes.Fill) {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-}
-
-function hasVisibleFill(fill?: ExcelJSTypes.Fill) {
-  if (!fill || fill.type !== "pattern" || fill.pattern === "none") return false;
-  const fgColor = fill.fgColor;
-  if (!fgColor) return true;
-  if ("theme" in fgColor && fgColor.theme === 0 && !fgColor.tint) return false;
-  if ("rgb" in fgColor && (fgColor.rgb === "FFFFFFFF" || fgColor.rgb === "00FFFFFF")) return false;
-  if ("argb" in fgColor && fgColor.argb === "FFFFFFFF") return false;
-  return true;
-}
-
-function collectMonthFills(sheet: ExcelJSTypes.Worksheet): ExcelJSTypes.Fill[] {
-  const fills: ExcelJSTypes.Fill[] = [];
-
-  for (let row = FORMATO_FIRST_DATA_ROW; row <= 7; row++) {
-    for (let col = 1; col <= 4; col++) {
-      const fill = sheet.getCell(row, col).fill;
-      if (!hasVisibleFill(fill)) continue;
-      if (!fills.some(existing => sameFill(existing, fill))) fills.push(cloneExcelValue(fill));
-    }
-  }
-
-  if (fills.length > 0) return fills;
-
-  return [
-    { type: "pattern", pattern: "solid", fgColor: { theme: 9, tint: 0.7999816888943144 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 8, tint: 0.5999938962981048 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 6, tint: -0.249977111117893 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 7, tint: 0.5999938962981048 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 9, tint: 0.3999755851924192 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 5, tint: 0.7999816888943144 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 7, tint: 0.7999816888943144 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 4, tint: 0.7999816888943144 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 2, tint: -0.0999786370433668 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 5, tint: 0.5999938962981048 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 9, tint: 0.5999938962981048 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFC000" }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 3, tint: 0.3999755851924192 }, bgColor: { indexed: 64 } },
-    { type: "pattern", pattern: "solid", fgColor: { theme: 5, tint: 0.3999755851924192 }, bgColor: { indexed: 64 } },
-  ] as ExcelJSTypes.Fill[];
-}
-
-function withFallbackFill(style: ExcelCellStyle, fill: ExcelJSTypes.Fill): ExcelCellStyle {
-  return {
-    ...style,
-    fill: hasVisibleFill(style.fill) ? style.fill : cloneExcelValue(fill),
-  };
-}
-
-function normalizeToken(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-}
-
-function formatAppDateForExcel(value: string): string {
-  const match = value.trim().match(/^(\d{1,2})\/([A-Za-zÁÉÍÓÚáéíóúÑñ]{3})\/(\d{4})$/);
-  if (!match) return value;
-
-  const month = MESES_ABR.findIndex(mes => normalizeToken(mes) === normalizeToken(match[2]));
-  if (month < 0) return value;
-
-  return `${match[1].padStart(2, "0")}/${String(month + 1).padStart(2, "0")}/${match[3]}`;
-}
-
-function formatModalidadForExcel(modalidad: string) {
-  return (modalidad || "").toUpperCase();
-}
-
-function formatEstadoForExcel(estado: EstadoTramite) {
-  if (estado === "recibido") return "Recibido";
-  if (estado === "enviado") return "Enviado";
-  if (estado === "aceptado") return "Aceptado";
-  if (estado === "rechazado") return "Rechazado";
-  return "Pendiente";
-}
-
-function setPhoneValue(cell: ExcelJSTypes.Cell, principal: string, secundario: string) {
-  const main = principal.trim();
-  const alt = secundario.trim();
-  if (!main || !alt) {
-    cell.value = main || alt;
-    return;
-  }
-
-  const baseFont = cloneExcelValue(cell.font ?? {});
-  cell.value = {
-    richText: [
-      { text: main, font: { ...baseFont, color: { argb: "FF0563C1" } } },
-      { text: "/", font: baseFont },
-      { text: alt, font: baseFont },
-    ],
-  };
-}
-
-function applyMonthFill(row: ExcelJSTypes.Row, fill: ExcelJSTypes.Fill) {
-  for (let col = 1; col <= 4; col++) {
-    row.getCell(col).fill = cloneExcelValue(fill);
-  }
-}
-
-function getMonthFill(fills: ExcelJSTypes.Fill[], mes: number) {
-  const cycleIndex = CICLO_MESES.indexOf(mes);
-  const fallbackIndex = Math.max(1, mes) - 1;
-  return fills[(cycleIndex >= 0 ? cycleIndex : fallbackIndex) % fills.length];
-}
-
-function applyCellStyle(cell: ExcelJSTypes.Cell, style?: ExcelCellStyle) {
-  if (!style) return;
-
-  const nextStyle = cloneExcelValue(style);
-  cell.style = nextStyle;
-
-  if (nextStyle.fill) cell.fill = cloneExcelValue(nextStyle.fill);
-  if (nextStyle.font) cell.font = cloneExcelValue(nextStyle.font);
-  if (nextStyle.border) cell.border = cloneExcelValue(nextStyle.border);
-  if (nextStyle.alignment) cell.alignment = cloneExcelValue(nextStyle.alignment);
-  if (nextStyle.numFmt) cell.numFmt = nextStyle.numFmt;
-  if (nextStyle.protection) cell.protection = cloneExcelValue(nextStyle.protection);
 }
 
 function copyImageRange(range: unknown) {
@@ -1375,73 +1211,5 @@ export async function exportReporteProductividadTituloXlsx(
   );
 }
 
-export async function exportTramiteTituloXlsx(
-  alumnos: Alumno[],
-  cicloAnioFin: number,
-  division: DivisionAcademica = "bachillerato"
-) {
-  const ExcelJS = (await import("exceljs")).default;
-  const response = await fetch(tramiteTituloTemplateUrl);
-  if (!response.ok) throw new Error("No se pudo cargar la plantilla del formato Excel.");
 
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(await response.arrayBuffer());
-
-  const sheet = workbook.getWorksheet("GENERAL") ?? workbook.worksheets[0];
-  if (!sheet) throw new Error("La plantilla no contiene una hoja válida.");
-
-  const baseRowTemplate = captureRowTemplate(sheet, FORMATO_FIRST_DATA_ROW);
-  const monthFills = collectMonthFills(sheet);
-  const estadoStyles = Object.fromEntries(
-    Object.entries(ESTADO_STYLE_ROWS).map(([estado, row]) => [
-      estado,
-      withFallbackFill(
-        cloneExcelValue(sheet.getCell(row, 18).style),
-        ESTADO_FILLS[estado as EstadoTramite]
-      ),
-    ])
-  ) as Record<EstadoTramite, ExcelCellStyle>;
-
-  if (sheet.rowCount >= FORMATO_FIRST_DATA_ROW) {
-    sheet.spliceRows(FORMATO_FIRST_DATA_ROW, sheet.rowCount - FORMATO_FIRST_DATA_ROW + 1);
-  }
-
-  const ordered = [...alumnos].sort((a, b) =>
-    a.anio - b.anio || a.mes - b.mes || a.nombre.localeCompare(b.nombre, "es")
-  );
-
-  ordered.forEach((alumno, index) => {
-    const rowNumber = FORMATO_FIRST_DATA_ROW + index;
-    const row = sheet.getRow(rowNumber);
-    applyRowTemplate(row, baseRowTemplate);
-    applyMonthFill(row, getMonthFill(monthFills, alumno.mes));
-
-    row.getCell(1).value = index + 1;
-    row.getCell(2).value = alumno.nombre;
-    row.getCell(3).value = alumno.preparatoriaNombre;
-    row.getCell(4).value = alumno.modalidad;
-    row.getCell(5).value = alumno.preparatoriaClave;
-    row.getCell(6).value = alumno.tramite;
-    row.getCell(7).value = alumno.tipoCertificado;
-    row.getCell(8).value = alumno.generacion;
-    row.getCell(9).value = alumno.numeroCuenta;
-    setPhoneValue(row.getCell(10), alumno.telefono ?? "", alumno.telefonoAlt ?? "");
-    row.getCell(11).value = alumno.email ?? "";
-    row.getCell(12).value = alumno.ingreso ? formatAppDateForExcel(alumno.ingreso) : "";
-    row.getCell(13).value = alumno.recibido ? formatAppDateForExcel(alumno.recibido) : "";
-    row.getCell(14).value = alumno.envio ? formatAppDateForExcel(alumno.envio) : "";
-    row.getCell(15).value = alumno.reenvio ? "SI" : "";
-    row.getCell(16).value = alumno.cartaPoder;
-    row.getCell(17).value = alumno.localizacion;
-    row.getCell(18).value = formatEstadoForExcel(alumno.estado);
-    applyCellStyle(row.getCell(18), estadoStyles[alumno.estado]);
-    row.commit();
-  });
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  await saveXlsxFile(
-    `certificados_${division}_ciclo_${getCicloEscolarLabel(cicloAnioFin)}.xlsx`,
-    new Uint8Array(buffer as ArrayBuffer)
-  );
-}
 
