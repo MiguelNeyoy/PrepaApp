@@ -21,7 +21,7 @@ export type TitlebarToast = {
   variant: "success" | "error" | "info";
 };
 
-const ABOUT_REPO_URL = "https://github.com/MiguelNeyoy/app-titulacion.git";
+const ABOUT_REPO_URL = "https://github.com/MiguelNeyoy/PrepaApp";
 const UI_SCALE_OPTIONS = [70, 80, 90, 100, 110, 120, 130, 140, 150];
 
 function AboutModal({ onClose }: { onClose: () => void }) {
@@ -120,7 +120,7 @@ function AboutModal({ onClose }: { onClose: () => void }) {
                   onClick={event => void openRepository(event)}
                   className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-300"
                 >
-                  <span className="min-w-0 truncate select-all">github.com/Frankz1997/app-titulacion.git</span>
+                  <span className="min-w-0 truncate select-all">github.com/MiguelNeyoy/PrepaApp</span>
                   <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
                 </a>
                 <button
@@ -682,7 +682,7 @@ export function LoginScreen({
           </div>
 
           <div className="px-10 pb-8">
-            <p className="text-[10px] font-mono text-white/20">v1.1.0 &middot; 2026</p>
+            <p className="text-[10px] font-mono text-white/20">v1.2.0 &middot; 2026</p>
           </div>
         </section>
 
