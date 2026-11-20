@@ -2,6 +2,7 @@ import type * as ExcelJSTypes from "exceljs";
 import { saveCsvFile } from "../platform/saveCsv";
 import { saveXlsxFile } from "../platform/saveXlsx";
 import formatoControlSolicitudesTemplateUrl from "../../FormatoControlSolicitudes.xlsx?url";
+import formatoCertificadoProfesionalTemplateUrl from "../../FormatoCertificadoProfesional.xlsx?url";
 import reporteProductividadTemplateUrl from "../../FORMATO REPORTE DE PRODUCTIVIDAD DE TITULO PROFESIONAL.xlsx?url";
 
 // -- Types ----------------------------------------------------------------------
@@ -510,6 +511,14 @@ export async function exportToCSV(
 
 const CONTROL_SOLICITUDES_FIRST_DATA_ROW = 7;
 const CONTROL_SOLICITUDES_ROWS_PER_PAGE = 20;
+const CERTIFICADO_PROFESIONAL_FIRST_DATA_ROW = 5;
+const CERTIFICADO_PROFESIONAL_ROWS_PER_PAGE = 18;
+
+export function getControlSolicitudesRowsPerPage(division: DivisionAcademica = "bachillerato"): number {
+  return division === "licenciatura"
+    ? CERTIFICADO_PROFESIONAL_ROWS_PER_PAGE
+    : CONTROL_SOLICITUDES_ROWS_PER_PAGE;
+}
 
 function cloneExcelValue<T>(value: T): T {
   if (value === undefined || value === null) return value;
@@ -607,12 +616,64 @@ function normalizeFolioCorte(folio?: string, division: DivisionAcademica = "bach
   return /^\d+$/.test(clean) ? clean.padStart(2, "0") : clean.toUpperCase();
 }
 
+function toExactArrayBuffer(data: ArrayBuffer | Uint8Array): ArrayBuffer {
+  if (data instanceof ArrayBuffer) return data;
+  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+}
+
+function hasReviewedValue(raw?: string | null): "SI" | "NO" {
+  const clean = (raw ?? "").trim().toUpperCase();
+  if (!clean || clean === "NO" || clean === "N" || clean === "FALSE" || clean === "0" || clean === "-") {
+    return "NO";
+  }
+  return "SI";
+}
+
 function clearFormatoControlRow(sheet: ExcelJSTypes.Worksheet, rowNumber: number, itemIndex: number) {
   const row = sheet.getRow(rowNumber);
   row.getCell(2).value = itemIndex;
   for (let col = 3; col <= 14; col++) {
     row.getCell(col).value = null;
   }
+}
+
+const PROFESIONAL_DATA_LEFT_COLS = new Set([3, 7, 9, 14]);
+const PROFESIONAL_THIN_BORDER: Partial<ExcelJSTypes.Borders> = {
+  top: { style: "thin", color: { indexed: 64 } },
+  bottom: { style: "thin", color: { indexed: 64 } },
+  left: { style: "thin", color: { indexed: 64 } },
+  right: { style: "thin", color: { indexed: 64 } },
+};
+
+function clearFormatoProfesionalRow(sheet: ExcelJSTypes.Worksheet, rowNumber: number, itemIndex: number) {
+  const row = sheet.getRow(rowNumber);
+  const numCell = row.getCell(1);
+  numCell.value = itemIndex;
+  numCell.numFmt = "General";
+  numCell.font = { name: "Aptos Narrow", size: 11, color: { argb: "FFFF0000" } };
+  numCell.fill = { type: "pattern", pattern: "none" };
+  numCell.border = PROFESIONAL_THIN_BORDER;
+  numCell.alignment = { horizontal: "center", vertical: "middle" };
+
+  for (let col = 2; col <= 14; col++) {
+    const cell = row.getCell(col);
+    cell.value = null;
+    cell.numFmt = "General";
+    cell.font = { name: "Aptos Narrow", size: 11, color: { theme: 1 } };
+    cell.fill = { type: "pattern", pattern: "none" };
+    cell.border = PROFESIONAL_THIN_BORDER;
+    cell.alignment = {
+      horizontal: PROFESIONAL_DATA_LEFT_COLS.has(col) ? "left" : "center",
+      vertical: "middle",
+      wrapText: true,
+    };
+  }
+
+  // Limpiar bordes residuales de la columna O heredados de la plantilla original
+  const extraCell = row.getCell(15);
+  extraCell.value = null;
+  extraCell.border = {};
+  extraCell.fill = { type: "pattern", pattern: "none" };
 }
 
 function toExcelNumericOrText(raw: string | number | undefined | null): string | number | null {
@@ -686,24 +747,73 @@ function fillFormatoControlSheet(
   }
 }
 
-export async function exportFormatoControlSolicitudesXlsx(
+function fillFormatoProfesionalSheet(
+  sheet: ExcelJSTypes.Worksheet,
+  alumnos: Alumno[],
+  pageIndex: number,
+  totalPages: number,
+  generatedAt: Date,
+  folioCorte: string
+) {
+  // C3: Fecha en formato largo, D3:F3: Folio del corte
+  const dateCell = sheet.getCell("C3");
+  dateCell.value = new Date(Date.UTC(generatedAt.getFullYear(), generatedAt.getMonth(), generatedAt.getDate()));
+  dateCell.numFmt = "[$-F800]dddd, mmmm dd, yyyy";
+
+  const folioLabel = totalPages > 1 ? `FOLIO: ${folioCorte} (${pageIndex + 1}/${totalPages})` : `FOLIO: ${folioCorte}`;
+  const folioCell = sheet.getCell("D3");
+  folioCell.value = folioLabel;
+  folioCell.font = { name: "Aptos Narrow", size: 11, bold: true, color: { theme: 1 } };
+  folioCell.alignment = { horizontal: "center", vertical: "middle" };
+
+  for (let offset = 0; offset < CERTIFICADO_PROFESIONAL_ROWS_PER_PAGE; offset++) {
+    const rowNumber = CERTIFICADO_PROFESIONAL_FIRST_DATA_ROW + offset;
+    const alumno = alumnos[offset];
+    const numeroFila = offset + 1;
+
+    clearFormatoProfesionalRow(sheet, rowNumber, numeroFila);
+    if (!alumno) continue;
+
+    const row = sheet.getRow(rowNumber);
+    const cuentaSinGuion = (alumno.numeroCuenta || "").replace(/\D/g, "");
+    const cicloFallback = getCicloEscolarLabel(getCicloEscolarAnioFinFromPeriodo(alumno.mes, alumno.anio));
+    const cicloRecibo = (alumno.cicloRecibo || cicloFallback).trim();
+    const hasCustomCarreraCodigo =
+      alumno.carreraCodigo !== undefined && String(alumno.carreraCodigo).trim() !== "";
+    const planRaw = (alumno.planEstudio ?? "").trim();
+
+    row.getCell(1).value = numeroFila;                                                                       // A: NÚM (1..18)
+    row.getCell(2).value = toExcelNumericOrText(cuentaSinGuion);                                             // B: NUM. DE CUENTA
+    row.getCell(3).value = alumno.nombre.trim().toUpperCase();                                               // C: NOMBRE DEL SOLICITANTE
+    row.getCell(4).value = toExcelNumericOrText(alumno.folioRecibo);                                         // D: FOLIO RECIBO
+    row.getCell(5).value = toExcelNumericOrText(cicloRecibo);                                                // E: CICLO DEL RECIBO
+    row.getCell(6).value = toExcelNumericOrText(alumno.preparatoriaClave);                                   // F: CLAVE UA
+    row.getCell(7).value = (alumno.preparatoriaNombre || alumno.preparatoriaClave || "").trim().toUpperCase(); // G: NOMBRE DE UNIDAD ACADÉMICA
+    row.getCell(8).value = hasCustomCarreraCodigo ? toExcelNumericOrText(alumno.carreraCodigo) : null;       // H: #DE CARRERA
+    row.getCell(9).value = (alumno.modalidad || "").trim().toUpperCase() || null;                            // I: NOMBRE DE CARRERA
+    row.getCell(10).value = planRaw ? toExcelNumericOrText(planRaw) : null;                                  // J: # PLAN
+    row.getCell(11).value = alumno.revisoKardex === false ? "NO" : "SI";                                     // K: REVISAR KARDEX
+    row.getCell(12).value = hasReviewedValue(alumno.microfilm);                                              // L: REVISO MICROFILM (SI) (NO)
+    row.getCell(13).value = hasReviewedValue(alumno.curp);                                                   // M: REVISO CURP (SI) (NO)
+    row.getCell(14).value = (alumno.observaciones ?? "").trim() || null;                                     // N: OBSERVACIONES
+  }
+}
+
+export async function buildFormatoControlSolicitudesWorkbook(
+  templateBuffer: ArrayBuffer | Uint8Array,
   alumnos: Alumno[],
   folioInput?: string,
-  division: DivisionAcademica = "bachillerato"
+  division: DivisionAcademica = "bachillerato",
+  generatedAt = new Date()
 ) {
   const ExcelJS = (await import("exceljs")).default;
-  const response = await fetch(formatoControlSolicitudesTemplateUrl);
-  if (!response.ok) throw new Error("No se pudo cargar la plantilla de corte de certificados.");
-
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(await response.arrayBuffer());
+  await workbook.xlsx.load(toExactArrayBuffer(templateBuffer));
 
   const templateSheet = workbook.worksheets[0];
   if (!templateSheet) throw new Error("La plantilla de corte no contiene una hoja válida.");
 
   const folioCorte = normalizeFolioCorte(folioInput, division);
-  saveFolioCorteToLocal(folioCorte, division);
-
   const ordered = [...alumnos];
   const totalPages = Math.max(1, Math.ceil(ordered.length / CONTROL_SOLICITUDES_ROWS_PER_PAGE));
   const sheets = [templateSheet];
@@ -713,7 +823,6 @@ export async function exportFormatoControlSolicitudesXlsx(
     sheets.push(copyWorksheetTemplate(workbook, templateSheet, `Corte ${pageIndex + 1}`));
   }
 
-  const generatedAt = new Date();
   sheets.forEach((sheet, pageIndex) => {
     const start = pageIndex * CONTROL_SOLICITUDES_ROWS_PER_PAGE;
     const pageAlumnos = ordered.slice(start, start + CONTROL_SOLICITUDES_ROWS_PER_PAGE);
@@ -723,11 +832,75 @@ export async function exportFormatoControlSolicitudesXlsx(
   const nivelArchivo = division === "licenciatura" ? "LICENCIATURA" : "BACHILLERATO";
   const dayStr = String(generatedAt.getDate()).padStart(2, "0");
   const monthStr = String(generatedAt.getMonth() + 1).padStart(2, "0");
+  const fileName = `${folioCorte} CORTE CERTIFICADOS ${nivelArchivo} URS ${dayStr}-${monthStr}.xlsx`;
+
+  return { workbook, folioCorte, totalPages, fileName };
+}
+
+export async function buildFormatoCertificadoProfesionalWorkbook(
+  templateBuffer: ArrayBuffer | Uint8Array,
+  alumnos: Alumno[],
+  folioInput?: string,
+  generatedAt = new Date()
+) {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(toExactArrayBuffer(templateBuffer));
+
+  const templateSheet = workbook.worksheets[0];
+  if (!templateSheet) throw new Error("La plantilla de certificado profesional no contiene una hoja válida.");
+
+  const folioCorte = normalizeFolioCorte(folioInput, "licenciatura");
+  const ordered = [...alumnos];
+  const totalPages = Math.max(1, Math.ceil(ordered.length / CERTIFICADO_PROFESIONAL_ROWS_PER_PAGE));
+  const sheets = [templateSheet];
+
+  templateSheet.name = totalPages === 1 ? "Hoja1" : "Corte 1";
+  for (let pageIndex = 1; pageIndex < totalPages; pageIndex++) {
+    sheets.push(copyWorksheetTemplate(workbook, templateSheet, `Corte ${pageIndex + 1}`));
+  }
+
+  sheets.forEach((sheet, pageIndex) => {
+    const start = pageIndex * CERTIFICADO_PROFESIONAL_ROWS_PER_PAGE;
+    const pageAlumnos = ordered.slice(start, start + CERTIFICADO_PROFESIONAL_ROWS_PER_PAGE);
+    fillFormatoProfesionalSheet(sheet, pageAlumnos, pageIndex, totalPages, generatedAt, folioCorte);
+  });
+
+  const dayStr = String(generatedAt.getDate()).padStart(2, "0");
+  const monthStr = String(generatedAt.getMonth() + 1).padStart(2, "0");
+  const fileName = `${folioCorte} CORTE CERTIFICADO PROFESIONAL URS ${dayStr}-${monthStr}.xlsx`;
+
+  return { workbook, folioCorte, totalPages, fileName };
+}
+
+export async function exportFormatoControlSolicitudesXlsx(
+  alumnos: Alumno[],
+  folioInput?: string,
+  division: DivisionAcademica = "bachillerato"
+) {
+  const isLicenciatura = division === "licenciatura";
+  const templateUrl = isLicenciatura
+    ? formatoCertificadoProfesionalTemplateUrl
+    : formatoControlSolicitudesTemplateUrl;
+  const response = await fetch(templateUrl);
+  if (!response.ok) {
+    throw new Error(
+      isLicenciatura
+        ? "No se pudo cargar la plantilla de certificado profesional."
+        : "No se pudo cargar la plantilla de corte de certificados."
+    );
+  }
+
+  const templateBuffer = await response.arrayBuffer();
+  const generatedAt = new Date();
+  const { workbook, folioCorte, fileName } = isLicenciatura
+    ? await buildFormatoCertificadoProfesionalWorkbook(templateBuffer, alumnos, folioInput, generatedAt)
+    : await buildFormatoControlSolicitudesWorkbook(templateBuffer, alumnos, folioInput, division, generatedAt);
+
+  saveFolioCorteToLocal(folioCorte, division);
+
   const buffer = await workbook.xlsx.writeBuffer();
-  await saveXlsxFile(
-    `${folioCorte} CORTE CERTIFICADOS ${nivelArchivo} URS ${dayStr}-${monthStr}.xlsx`,
-    new Uint8Array(buffer as ArrayBuffer)
-  );
+  await saveXlsxFile(fileName, new Uint8Array(buffer as ArrayBuffer));
 }
 
 const PRODUCTIVIDAD_FIRST_DATA_ROW = 7;

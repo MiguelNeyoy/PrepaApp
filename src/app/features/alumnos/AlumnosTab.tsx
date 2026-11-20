@@ -35,6 +35,7 @@ import {
   getCicloEscolarAnioFin,
   getCicloEscolarAnioFinFromPeriodo,
   getCicloEscolarLabel,
+  getControlSolicitudesRowsPerPage,
   getDefaultCarreraCodigo,
   getPeriodoAnioForCiclo,
   loadSavedFolioCorte,
@@ -1007,8 +1008,9 @@ export function AlumnosTab({
     ? selectedAlumnos
     : filtered;
 
+  const rowsPerSheet = getControlSolicitudesRowsPerPage(division);
   const targetCount = targetAlumnosExport.length;
-  const totalHojas = Math.max(1, Math.ceil(targetCount / 20));
+  const totalHojas = Math.max(1, Math.ceil(targetCount / rowsPerSheet));
 
   const handleExportarFormatoURS = async () => {
     if (targetAlumnosExport.length === 0 || exportingFormato) return;
@@ -1037,13 +1039,13 @@ export function AlumnosTab({
         ]);
 
         setSelectedIds(new Set());
-        const hojas = Math.max(1, Math.ceil(alumnosElegiblesCorte.length / 20));
+        const hojas = Math.max(1, Math.ceil(alumnosElegiblesCorte.length / rowsPerSheet));
         onToast?.(
           `Corte Folio ${cleanFolio} generado (${alumnosElegiblesCorte.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""}) y enviados a Culiacán`,
           "success"
         );
       } else {
-        const hojas = Math.max(1, Math.ceil(targetAlumnosExport.length / 20));
+        const hojas = Math.max(1, Math.ceil(targetAlumnosExport.length / rowsPerSheet));
         onToast?.(
           `Reporte URS generado (${targetAlumnosExport.length} alumnos en ${hojas} hoja${hojas > 1 ? "s" : ""})`,
           "success"
@@ -1264,8 +1266,8 @@ export function AlumnosTab({
               className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50"
               title={
                 isOfficialCorte
-                  ? "Descarga el formato de Corte de Certificados URS (20 por hoja) y actualiza automáticamente el estado a Enviado (Culiacán)"
-                  : "Exporta los registros actuales en el formato oficial URS (20 por hoja) sin modificar estados"
+                  ? `Descarga el formato de ${isLicenciatura ? "Certificado Profesional" : "Corte de Certificados"} URS (${rowsPerSheet} por hoja) y actualiza automáticamente el estado a Enviado (Culiacán)`
+                  : `Exporta los registros actuales en el formato oficial ${isLicenciatura ? "de Certificado Profesional " : ""}URS (${rowsPerSheet} por hoja) sin modificar estados`
               }
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
