@@ -647,33 +647,41 @@ const PROFESIONAL_THIN_BORDER: Partial<ExcelJSTypes.Borders> = {
 
 function clearFormatoProfesionalRow(sheet: ExcelJSTypes.Worksheet, rowNumber: number, itemIndex: number) {
   const row = sheet.getRow(rowNumber);
+  row.height = 18;
+
   const numCell = row.getCell(1);
   numCell.value = itemIndex;
-  numCell.numFmt = "General";
-  numCell.font = { name: "Aptos Narrow", size: 11, color: { argb: "FFFF0000" } };
-  numCell.fill = { type: "pattern", pattern: "none" };
-  numCell.border = PROFESIONAL_THIN_BORDER;
-  numCell.alignment = { horizontal: "center", vertical: "middle" };
+  numCell.style = {
+    numFmt: "General",
+    font: { name: "Aptos Narrow", size: 11, color: { argb: "FFFF0000" } },
+    fill: { type: "pattern", pattern: "none" },
+    border: { ...PROFESIONAL_THIN_BORDER },
+    alignment: { horizontal: "center", vertical: "middle", wrapText: false },
+  };
 
   for (let col = 2; col <= 14; col++) {
     const cell = row.getCell(col);
     cell.value = null;
-    cell.numFmt = "General";
-    cell.font = { name: "Aptos Narrow", size: 11, color: { theme: 1 } };
-    cell.fill = { type: "pattern", pattern: "none" };
-    cell.border = PROFESIONAL_THIN_BORDER;
-    cell.alignment = {
-      horizontal: PROFESIONAL_DATA_LEFT_COLS.has(col) ? "left" : "center",
-      vertical: "middle",
-      wrapText: true,
+    cell.style = {
+      numFmt: "General",
+      font: { name: "Aptos Narrow", size: 11, color: { theme: 1 } },
+      fill: { type: "pattern", pattern: "none" },
+      border: { ...PROFESIONAL_THIN_BORDER },
+      alignment: {
+        horizontal: PROFESIONAL_DATA_LEFT_COLS.has(col) ? "left" : "center",
+        vertical: "middle",
+        wrapText: false,
+      },
     };
   }
 
   // Limpiar bordes residuales de la columna O heredados de la plantilla original
   const extraCell = row.getCell(15);
   extraCell.value = null;
-  extraCell.border = {};
-  extraCell.fill = { type: "pattern", pattern: "none" };
+  extraCell.style = {
+    border: {},
+    fill: { type: "pattern", pattern: "none" },
+  };
 }
 
 function toExcelNumericOrText(raw: string | number | undefined | null): string | number | null {
@@ -755,6 +763,8 @@ function fillFormatoProfesionalSheet(
   generatedAt: Date,
   folioCorte: string
 ) {
+  sheet.getColumn(14).width = 45;
+
   // C3: Fecha en formato largo, D3:F3: Folio del corte
   const dateCell = sheet.getCell("C3");
   dateCell.value = new Date(Date.UTC(generatedAt.getFullYear(), generatedAt.getMonth(), generatedAt.getDate()));
@@ -763,8 +773,11 @@ function fillFormatoProfesionalSheet(
   const folioLabel = totalPages > 1 ? `FOLIO: ${folioCorte} (${pageIndex + 1}/${totalPages})` : `FOLIO: ${folioCorte}`;
   const folioCell = sheet.getCell("D3");
   folioCell.value = folioLabel;
-  folioCell.font = { name: "Aptos Narrow", size: 11, bold: true, color: { theme: 1 } };
-  folioCell.alignment = { horizontal: "center", vertical: "middle" };
+  folioCell.style = {
+    ...cloneExcelValue(folioCell.style),
+    font: { name: "Aptos Narrow", size: 11, bold: true, color: { theme: 1 } },
+    alignment: { horizontal: "center", vertical: "middle" },
+  };
 
   for (let offset = 0; offset < CERTIFICADO_PROFESIONAL_ROWS_PER_PAGE; offset++) {
     const rowNumber = CERTIFICADO_PROFESIONAL_FIRST_DATA_ROW + offset;

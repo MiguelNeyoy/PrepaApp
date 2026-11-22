@@ -682,7 +682,7 @@ export function LoginScreen({
           </div>
 
           <div className="px-10 pb-8">
-            <p className="text-[10px] font-mono text-white/20">v1.2.0 &middot; 2026</p>
+            <p className="text-[10px] font-mono text-white/20">v1.2.1 &middot; 2026</p>
           </div>
         </section>
 

@@ -1,6 +1,6 @@
 [package]
 name = "app-Prepa"
-version = "1.2.0"
+version = "1.2.1"
 description = "APP Prepa"
 authors = ["APP Prepa"]
 edition = "2021"
